@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:host": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-github.ps1",
     "preview": "vite preview",
     "preview:host": "vite preview --host 0.0.0.0"
   },

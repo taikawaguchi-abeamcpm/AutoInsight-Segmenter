@@ -1,4 +1,4 @@
-import { Cable, CheckCircle2, KeyRound, RefreshCcw, Save, ShieldCheck } from 'lucide-react';
+import { Cable, CheckCircle2, KeyRound, Plus, RefreshCcw, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { fabricConnectionApi } from '../../services/admin/fabricConnectionApi';
 import { isApiError } from '../../services/client';
@@ -35,14 +35,45 @@ const initialDraft: FabricConnectionDraft = {
 export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) => {
   const [connections, setConnections] = useState<FabricConnectionConfig[]>([]);
   const [draft, setDraft] = useState<FabricConnectionDraft>(initialDraft);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<FabricConnectionTestResult | null>(null);
 
   const activeConnection = useMemo(() => connections.find((connection) => connection.isActive) ?? connections[0] ?? null, [connections]);
+  const selectedConnection = useMemo(
+    () => connections.find((connection) => connection.id === selectedConnectionId) ?? activeConnection,
+    [activeConnection, connections, selectedConnectionId]
+  );
+
+  const applyConnectionToDraft = (connection: FabricConnectionConfig) => {
+    setSelectedConnectionId(connection.id);
+    setDraft({
+      displayName: connection.displayName,
+      endpointUrl: connection.endpointUrl,
+      tenantId: connection.tenantId,
+      clientId: connection.clientId,
+      authMode: connection.authMode,
+      workspaceId: connection.workspaceId ?? '',
+      schemaVersion: connection.schemaVersion ?? '',
+      clientSecret: ''
+    });
+    setMessage(null);
+    setError(null);
+    setTestResult(null);
+  };
+
+  const newConnection = () => {
+    setSelectedConnectionId(null);
+    setDraft(initialDraft);
+    setMessage(null);
+    setError(null);
+    setTestResult(null);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -52,16 +83,9 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
       setConnections(nextConnections);
       const active = nextConnections.find((connection) => connection.isActive) ?? nextConnections[0];
       if (active) {
-        setDraft({
-          displayName: active.displayName,
-          endpointUrl: active.endpointUrl,
-          tenantId: active.tenantId,
-          clientId: active.clientId,
-          authMode: active.authMode,
-          workspaceId: active.workspaceId ?? '',
-          schemaVersion: active.schemaVersion ?? '',
-          clientSecret: ''
-        });
+        applyConnectionToDraft(active);
+      } else {
+        newConnection();
       }
     } finally {
       setLoading(false);
@@ -102,12 +126,43 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
     try {
       const saved = await fabricConnectionApi.save(draft);
       setConnections((current) => [saved, ...current.filter((connection) => connection.id !== saved.id).map((connection) => ({ ...connection, isActive: false }))]);
+      setSelectedConnectionId(saved.id);
       setDraft((current) => ({ ...current, clientSecret: '' }));
       setMessage('接続設定を保存し、有効な接続として設定しました。');
     } catch (nextError) {
       setError(isApiError(nextError) ? `${nextError.message} (${nextError.correlationId})` : '接続設定を保存できませんでした。');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const removeConnection = async () => {
+    if (!selectedConnection) {
+      return;
+    }
+
+    const approved = window.confirm(`接続設定「${selectedConnection.displayName}」を削除します。よろしいですか？`);
+    if (!approved) {
+      return;
+    }
+
+    setDeleting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const nextConnections = await fabricConnectionApi.remove(selectedConnection.id);
+      setConnections(nextConnections);
+      const nextSelected = nextConnections.find((connection) => connection.isActive) ?? nextConnections[0];
+      if (nextSelected) {
+        applyConnectionToDraft(nextSelected);
+      } else {
+        newConnection();
+      }
+      setMessage('接続設定を削除しました。');
+    } catch (nextError) {
+      setError(isApiError(nextError) ? `${nextError.message} (${nextError.correlationId})` : '接続設定を削除できませんでした。');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -121,6 +176,9 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
         <div className="actions">
           <Button variant="secondary" onClick={() => void load()} disabled={loading}>
             <RefreshCcw size={16} /> 再読み込み
+          </Button>
+          <Button variant="secondary" onClick={newConnection} disabled={loading || saving || deleting}>
+            <Plus size={16} /> 新規作成
           </Button>
           <Button variant="secondary" onClick={onBack}>
             データセットへ戻る
@@ -136,19 +194,8 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
             <button
               key={connection.id}
               type="button"
-              className={`dataset-card ${connection.id === activeConnection?.id ? 'selected' : ''}`}
-              onClick={() =>
-                setDraft({
-                  displayName: connection.displayName,
-                  endpointUrl: connection.endpointUrl,
-                  tenantId: connection.tenantId,
-                  clientId: connection.clientId,
-                  authMode: connection.authMode,
-                  workspaceId: connection.workspaceId ?? '',
-                  schemaVersion: connection.schemaVersion ?? '',
-                  clientSecret: ''
-                })
-              }
+              className={`dataset-card ${connection.id === selectedConnection?.id ? 'selected' : ''}`}
+              onClick={() => applyConnectionToDraft(connection)}
             >
               <div>
                 <h2>{connection.displayName}</h2>
@@ -173,16 +220,16 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
               <h2>接続情報</h2>
               <p>Client Secret はサーバー側の秘密情報ストアにのみ保存する前提です。</p>
             </div>
-            <Badge tone={testResult ? statusTone[testResult.status] : activeConnection ? statusTone[activeConnection.status] : 'neutral'}>
-              {testResult ? statusLabel[testResult.status] : activeConnection ? statusLabel[activeConnection.status] : '未設定'}
+            <Badge tone={testResult ? statusTone[testResult.status] : selectedConnection ? statusTone[selectedConnection.status] : 'neutral'}>
+              {testResult ? statusLabel[testResult.status] : selectedConnection ? statusLabel[selectedConnection.status] : '未設定'}
             </Badge>
           </div>
 
           <div className="metrics-grid">
             <Metric label="有効接続" value={activeConnection?.displayName ?? '-'} />
             <Metric label="認証方式" value={draft.authMode === 'obo' ? 'OBO' : 'SPN'} />
-            <Metric label="Secret" value={activeConnection?.secretConfigured || draft.clientSecret ? '登録済み' : '-'} />
-            <Metric label="最終確認" value={formatDateTime(testResult?.testedAt ?? activeConnection?.lastTestedAt)} />
+            <Metric label="Secret" value={selectedConnection?.secretConfigured || draft.clientSecret ? '登録済み' : '-'} />
+            <Metric label="最終確認" value={formatDateTime(testResult?.testedAt ?? selectedConnection?.lastTestedAt)} />
           </div>
 
           {message ? <p className="notice success">{message}</p> : null}
@@ -255,10 +302,13 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
         <span>{connections.length} 件の接続設定</span>
         <strong>{activeConnection ? `${activeConnection.displayName} / ${statusLabel[activeConnection.status]}` : '未設定'}</strong>
         <div className="actions">
-          <Button variant="secondary" onClick={testConnection} disabled={testing || saving}>
+          <Button variant="danger" onClick={removeConnection} disabled={!selectedConnection || testing || saving || deleting}>
+            <Trash2 size={16} /> {deleting ? '削除中' : '削除'}
+          </Button>
+          <Button variant="secondary" onClick={testConnection} disabled={testing || saving || deleting}>
             <Cable size={16} /> {testing ? '確認中' : '接続確認'}
           </Button>
-          <Button onClick={saveConnection} disabled={testing || saving}>
+          <Button onClick={saveConnection} disabled={testing || saving || deleting}>
             <Save size={16} /> {saving ? '保存中' : '保存して有効化'}
           </Button>
         </div>

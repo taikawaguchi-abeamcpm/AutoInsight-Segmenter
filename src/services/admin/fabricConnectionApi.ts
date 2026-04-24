@@ -2,24 +2,45 @@ import type { FabricConnectionConfig, FabricConnectionDraft, FabricConnectionTes
 import { createApiError, delay, makeHash } from '../client';
 import { nowIso } from '../mockData';
 
-let savedConnections: FabricConnectionConfig[] = [
-  {
-    id: 'fabric-conn-marketing',
-    displayName: 'Marketing Fabric GraphQL',
-    endpointUrl: 'https://api.fabric.microsoft.com/v1/workspaces/ws-marketing/graphqlApis/customer-insight/graphql',
-    tenantId: 'contoso-tenant-id',
-    clientId: 'autoinsight-app-client-id',
-    authMode: 'obo',
-    workspaceId: 'ws-marketing',
-    schemaVersion: 'fabric-schema-2026-04-24',
-    status: 'ready',
-    isActive: true,
-    secretConfigured: false,
-    lastTestedAt: '2026-04-24T04:30:00Z',
-    lastSuccessAt: '2026-04-24T04:30:00Z',
-    updatedAt: '2026-04-24T04:30:00Z',
-    updatedBy: 'admin@example.com'
+const STORAGE_KEY = 'autoinsight.fabricConnections.v1';
+
+const sampleConnection: FabricConnectionConfig = {
+  id: 'fabric-conn-marketing',
+  displayName: 'Marketing Fabric GraphQL',
+  endpointUrl: 'https://api.fabric.microsoft.com/v1/workspaces/ws-marketing/graphqlApis/customer-insight/graphql',
+  tenantId: 'contoso-tenant-id',
+  clientId: 'autoinsight-app-client-id',
+  authMode: 'obo',
+  workspaceId: 'ws-marketing',
+  schemaVersion: 'fabric-schema-2026-04-24',
+  status: 'ready',
+  isActive: true,
+  secretConfigured: false,
+  lastTestedAt: '2026-04-24T04:30:00Z',
+  lastSuccessAt: '2026-04-24T04:30:00Z',
+  updatedAt: '2026-04-24T04:30:00Z',
+  updatedBy: 'admin@example.com'
+};
+
+const readConnections = (): FabricConnectionConfig[] | null => {
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return value ? (JSON.parse(value) as FabricConnectionConfig[]) : null;
+  } catch {
+    return null;
   }
+};
+
+const writeConnections = (connections: FabricConnectionConfig[]) => {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(connections));
+  } catch {
+    // In-memory state still works if storage is unavailable.
+  }
+};
+
+let savedConnections: FabricConnectionConfig[] = readConnections() ?? [
+  sampleConnection
 ];
 
 const validateDraft = (draft: FabricConnectionDraft) => {
@@ -62,6 +83,11 @@ export const fabricConnectionApi = {
     return [...savedConnections];
   },
 
+  async getActive(): Promise<FabricConnectionConfig | null> {
+    await delay(80);
+    return savedConnections.find((connection) => connection.isActive && connection.status === 'ready') ?? null;
+  },
+
   async test(draft: FabricConnectionDraft): Promise<FabricConnectionTestResult> {
     await delay(460);
     validateDraft(draft);
@@ -101,6 +127,28 @@ export const fabricConnectionApi = {
     };
 
     savedConnections = [next, ...savedConnections.filter((connection) => connection.id !== id).map((connection) => ({ ...connection, isActive: false }))];
+    writeConnections(savedConnections);
     return next;
+  },
+
+  async remove(connectionId: string): Promise<FabricConnectionConfig[]> {
+    await delay(180);
+
+    const target = savedConnections.find((connection) => connection.id === connectionId);
+    if (!target) {
+      throw createApiError({
+        code: 'CONNECTION.NOT_FOUND',
+        message: '削除対象の接続設定が見つかりません。',
+        targetPath: `fabricConnection/${connectionId}`
+      });
+    }
+
+    const remaining = savedConnections.filter((connection) => connection.id !== connectionId);
+    savedConnections = target.isActive && remaining.length > 0
+      ? remaining.map((connection, index) => ({ ...connection, isActive: index === 0 }))
+      : remaining;
+    writeConnections(savedConnections);
+
+    return [...savedConnections];
   }
 };
