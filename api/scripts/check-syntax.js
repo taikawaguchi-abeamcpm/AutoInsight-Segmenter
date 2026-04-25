@@ -12,7 +12,12 @@ const collect = (directory) =>
     return entry.isFile() && entry.name.endsWith('.js') ? [path] : [];
   });
 
-for (const file of collect(join(__dirname, '..', 'src'))) {
+const files = [
+  ...collect(join(__dirname, '..', 'src')),
+  ...collect(join(__dirname, '..', 'httpApi'))
+];
+
+for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], { stdio: 'inherit' });
   if (result.status !== 0) {
     process.exit(result.status);
