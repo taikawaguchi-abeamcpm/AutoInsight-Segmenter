@@ -219,7 +219,8 @@ type AnalysisResultDocument {
 4. `fabricDatasets` で公開済み GraphQL API と対応するデータセット候補を取得する。
 5. ユーザーが `Fabric に接続` を押したら、管理画面の有効接続設定に紐づく endpoint へ疎通確認クエリを送る。
 6. `fabricDatasetSchema` でテーブル一覧とカラムメタデータを取得する。
-7. サンプル値は `sample:read` 権限がある場合のみ取得し、PII候補はマスクする。
+7. Query フィールドの戻り値に `totalCount` が公開されている場合は、`first: 1` 相当の軽量クエリでテーブルごとの行数目安を取得する。
+8. サンプル値は `sample:read` 権限がある場合のみ取得し、PII候補はマスクする。
 
 ## 12. 疎通確認クエリ案
 実Fabricスキーマはデータソースごとに異なるため、初期疎通は introspection または軽量な公開テーブルの `first: 1` 相当クエリで確認する。
@@ -234,20 +235,35 @@ query FabricHealthCheck {
 }
 ```
 
+## 13. 行数取得クエリ案
+Fabric GraphQL の公開スキーマが connection 型に `totalCount` を持つ場合のみ、行数目安を取得する。`totalCount` がないテーブル、または必須引数を補えないテーブルは未取得扱いにする。
+
+```graphql
+query FabricRowCounts {
+  accounts(first: 1) {
+    totalCount
+  }
+  appointments(first: 1) {
+    totalCount
+  }
+}
+```
+
 本番運用では introspection を無効化する可能性があるため、Fabric schema export をCIで取得し、アプリ側の契約テストに使う。
 
-## 13. スキーマ運用
+## 14. スキーマ運用
 - Fabric の schema export をリポジトリまたは成果物ストレージでバージョン管理する。
 - 追加フィールドは後方互換として許容する。
 - 削除、リネーム、型変更は破壊的変更として検出し、対象画面のクエリを更新するまでリリースを止める。
 - Facade API の `FabricDataType` へ変換できない型は `unknown` とし、分析対象から除外する。
 
-## 14. 参照元
+## 15. 参照元
 - Microsoft Learn: https://learn.microsoft.com/en-us/fabric/data-engineering/api-graphql-overview
 - Microsoft Learn: https://learn.microsoft.com/en-us/fabric/data-engineering/get-started-api-graphql
 - Microsoft Learn: https://learn.microsoft.com/en-us/fabric/data-engineering/api-graphql-introspection-schema-export
 - Microsoft Learn: https://learn.microsoft.com/en-us/fabric/data-engineering/api-graphql-service-principal
 
-## 15. 変更履歴
+## 16. 変更履歴
+- 2026-04-26: 実接続時の `totalCount` による行数取得方針を追記。
 - 2026-04-24: Fabric 接続情報を管理画面で入力・保存する方式に更新。
 - 2026-04-24: `/design` 成果物として Fabric GraphQL 接続とデータスキーマを追加。

@@ -90,6 +90,22 @@ const introspectFabric = async (connection, req) => {
           name
           fields {
             name
+            args {
+              name
+              defaultValue
+              type {
+                kind
+                name
+                ofType {
+                  kind
+                  name
+                  ofType {
+                    kind
+                    name
+                  }
+                }
+              }
+            }
             type {
               kind
               name
@@ -194,6 +210,36 @@ const isListType = (type) => unwrapTypeRef(type).some((item) => item.kind === 'L
 
 const findField = (type, fieldName) => (type?.fields || []).find((field) => field.name === fieldName);
 
+const isNonNullType = (type) => type?.kind === 'NON_NULL';
+
+const fieldArguments = (field) => {
+  const args = field?.args || [];
+  if (!args.some((arg) => arg.name === 'first')) {
+    return '';
+  }
+
+  // Fabric connection fields generally accept first/after. Asking for one item
+  // keeps the query cheap while allowing totalCount to be returned.
+  return '(first: 1)';
+};
+
+const rowCountSource = (field, objectTypes) => {
+  const connectionType = objectTypes.get(unwrapNamedType(field.type));
+  const totalCountField = findField(connectionType, 'totalCount');
+  if (!totalCountField) {
+    return null;
+  }
+
+  const unsupportedRequiredArgs = (field.args || []).filter(
+    (arg) => isNonNullType(arg.type) && arg.defaultValue == null && arg.name !== 'first'
+  );
+  if (unsupportedRequiredArgs.length > 0) {
+    return null;
+  }
+
+  return connectionType;
+};
+
 const resolveRowType = (field, objectTypes) => {
   const directType = objectTypes.get(unwrapNamedType(field.type));
   const itemsField = findField(directType, 'items');
@@ -206,6 +252,36 @@ const resolveRowType = (field, objectTypes) => {
   }
 
   return directType;
+};
+
+const fetchRowCounts = async (connection, req, tableFields, objectTypes) => {
+  const countableFields = tableFields.filter((field) => rowCountSource(field, objectTypes));
+  if (countableFields.length === 0) {
+    return new Map();
+  }
+
+  const selections = countableFields
+    .map((field, index) => `t${index}: ${field.name}${fieldArguments(field)} { totalCount }`)
+    .join('\n');
+
+  try {
+    const data = await executeFabricGraphql(
+      connection,
+      req,
+      `query AutoInsightRowCounts {
+        ${selections}
+      }`
+    );
+
+    return new Map(
+      countableFields.map((field, index) => {
+        const value = data?.[`t${index}`]?.totalCount;
+        return [field.name, typeof value === 'number' ? value : Number.isFinite(Number(value)) ? Number(value) : undefined];
+      })
+    );
+  } catch {
+    return new Map();
+  }
 };
 
 const isBusinessQueryField = (field, objectTypes) => {
@@ -223,7 +299,7 @@ const isBusinessColumn = (column) => {
   return !isListType(column.type);
 };
 
-const buildFabricDatasetFromSchema = (connection, schema, makeHash) => {
+const buildFabricDatasetFromSchema = (connection, schema, makeHash, rowCounts = new Map()) => {
   const fields = schema.queryType?.fields || [];
   const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
@@ -237,6 +313,7 @@ const buildFabricDatasetFromSchema = (connection, schema, makeHash) => {
         id: `tbl-${field.name}`,
         name: field.name,
         displayName: titleize(field.name),
+        rowCount: rowCounts.get(field.name),
         description: objectType?.name ? `GraphQL type: ${objectType.name}` : undefined,
         columns: columns.map((column) => {
           const columnTypeName = graphTypeName(column.type);
@@ -277,9 +354,17 @@ const getActiveConnection = async () => {
 const buildDataset = async (connection, req, makeHash) => {
   const schema = await introspectFabric(connection, req);
   const fields = schema.queryType?.fields || [];
+  const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
+  const tableFields = fields.filter((field) => isBusinessQueryField(field, objectTypes));
+  const rowCounts = await fetchRowCounts(connection, req, tableFields, objectTypes);
   const apiName = getGraphqlApiName(connection.endpointUrl);
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
-  const fabricDataset = buildFabricDatasetFromSchema(connection, schema, makeHash);
+  const fabricDataset = buildFabricDatasetFromSchema(connection, schema, makeHash, rowCounts);
+  const hasRowCounts = fabricDataset.tables.some((table) => typeof table.rowCount === 'number');
+  const rowEstimate = fabricDataset.tables.reduce(
+    (sum, table) => (typeof table.rowCount === 'number' ? sum + table.rowCount : sum),
+    0
+  );
 
   return {
     fabricDataset,
@@ -306,7 +391,7 @@ const buildDataset = async (connection, req, makeHash) => {
     preview: {
       datasetId,
       ownerName: connection.displayName,
-      rowEstimate: undefined,
+      rowEstimate: hasRowCounts ? rowEstimate : undefined,
       columnCount: fabricDataset.tables.reduce((sum, table) => sum + table.columns.length, 0),
       primaryKeyCandidateCount: 0,
       timestampColumnCount: fabricDataset.tables.flatMap((table) => table.columns).filter((column) => column.dataType === 'date' || column.dataType === 'datetime' || /date|time|timestamp/i.test(column.name)).length,
