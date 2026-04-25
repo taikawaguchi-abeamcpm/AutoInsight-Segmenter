@@ -1,3 +1,4 @@
+const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
 
 const actor = 'system';
@@ -39,7 +40,7 @@ const sanitize = (connection) => {
   return safe;
 };
 
-const validateDraft = (draft) => {
+const validateDraft = (draft, options = {}) => {
   if (!draft.displayName?.trim()) {
     throw Object.assign(new Error('接続名を入力してください。'), {
       status: 400,
@@ -61,7 +62,7 @@ const validateDraft = (draft) => {
     });
   }
 
-  if (draft.authMode === 'service_principal' && !draft.clientSecret?.trim()) {
+  if (draft.authMode === 'service_principal' && options.requireSecret && !draft.clientSecret?.trim()) {
     throw Object.assign(new Error('Service principal 方式では Client Secret の登録が必要です。'), {
       status: 400,
       code: 'VALIDATION.SECRET_REQUIRED'
@@ -137,26 +138,31 @@ const routes = {
 
   'POST fabric-connections/test': async (req, context) => {
     const draft = readBody(req);
-    validateDraft(draft);
+    validateDraft(draft, { requireSecret: draft.authMode === 'service_principal' });
+    const schema = await introspectFabric(draft, req);
+    const fields = schema.queryType?.fields || [];
 
     json(context, 200, {
       status: 'ready',
-      message: 'Fabric GraphQL endpoint の設定値を確認しました。実疎通はFabric認証実装後に有効化します。',
+      message: `Fabric GraphQL endpoint への実接続に成功しました。Queryフィールド ${fields.length} 件を検出しました。`,
       testedAt: nowIso(),
-      queryTypeName: 'Query',
+      queryTypeName: schema.queryType?.name || 'Query',
       correlationId: correlationId()
     });
   },
 
   'POST fabric-connections': async (req, context) => {
     const draft = readBody(req);
-    validateDraft(draft);
-
     const id = `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
     const now = nowIso();
     const current = await listConnections();
     const existing = current.find((connection) => connection.id === id);
-    const { upsert } = getStore();
+    const { queryAll, upsert } = getStore();
+    const rawExisting = (await queryAll('fabricConnections', {
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: id }]
+    }))[0];
+    validateDraft(draft, { requireSecret: draft.authMode === 'service_principal' && !rawExisting?.clientSecret });
 
     await Promise.all(
       current
@@ -172,6 +178,9 @@ const routes = {
       tenantId: draft.tenantId.trim(),
       clientId: draft.clientId.trim(),
       authMode: draft.authMode,
+      clientSecret: draft.authMode === 'service_principal'
+        ? draft.clientSecret?.trim() || rawExisting?.clientSecret
+        : undefined,
       workspaceId: draft.workspaceId?.trim() || undefined,
       schemaVersion: draft.schemaVersion?.trim() || undefined,
       status: 'ready',
@@ -184,6 +193,23 @@ const routes = {
     });
 
     json(context, 200, sanitize(saved));
+  },
+
+  'GET datasets': async (req, context) => {
+    const connection = await getActiveConnection();
+    if (!connection) {
+      json(context, 200, { data: [], pageInfo: { hasNextPage: false, totalCount: 0 } });
+      return;
+    }
+
+    const { dataset } = await buildDataset(connection, req, makeHash);
+    json(context, 200, {
+      data: [dataset],
+      pageInfo: {
+        hasNextPage: false,
+        totalCount: 1
+      }
+    });
   },
 
   'POST mappings/save': async (req, context) => {
@@ -339,6 +365,24 @@ module.exports = async function (context, req) {
       }
 
       json(context, 200, records[0]);
+      return;
+    }
+
+    const datasetPreviewMatch = route.match(/^datasets\/([^/]+)\/preview$/);
+    if (req.method.toUpperCase() === 'GET' && datasetPreviewMatch) {
+      const connection = await getActiveConnection();
+      if (!connection) {
+        json(context, 404, null);
+        return;
+      }
+
+      const { preview } = await buildDataset(connection, req, makeHash);
+      if (preview.datasetId !== decodeURIComponent(datasetPreviewMatch[1])) {
+        json(context, 404, null);
+        return;
+      }
+
+      json(context, 200, preview);
       return;
     }
 

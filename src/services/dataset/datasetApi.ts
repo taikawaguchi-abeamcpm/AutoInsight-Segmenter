@@ -1,6 +1,6 @@
 import type { FabricConnectionConfig } from '../../types/admin';
 import { fabricConnectionApi } from '../admin/fabricConnectionApi';
-import { createApiError, delay, makeHash, type RequestOptions } from '../client';
+import { apiRequest, createApiError, delay, makeHash, type RequestOptions } from '../client';
 import { mockDatasets, mockPreviews, nowIso } from '../mockData';
 import type { AsyncResult } from '../../types/common';
 import type { DatasetListItem, DatasetPreview, SelectedDatasetContext } from '../../types/dataset';
@@ -72,6 +72,13 @@ const getConnectionPreview = (connection: FabricConnectionConfig): DatasetPrevie
 
 export const datasetApi = {
   async listDatasets(options: RequestOptions = {}): Promise<AsyncResult<DatasetListItem[]>> {
+    const response = await apiRequest<AsyncResult<DatasetListItem[]>>('/datasets', {
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(undefined, options.signal);
     const activeConnection = await fabricConnectionApi.getActive();
     const datasets = !activeConnection
@@ -90,6 +97,13 @@ export const datasetApi = {
   },
 
   async getDatasetPreview(datasetId: string, options: RequestOptions = {}): Promise<DatasetPreview> {
+    const response = await apiRequest<DatasetPreview>(`/datasets/${encodeURIComponent(datasetId)}/preview`, {
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(undefined, options.signal);
     const activeConnection = await fabricConnectionApi.getActive();
     const preview = mockPreviews[datasetId];

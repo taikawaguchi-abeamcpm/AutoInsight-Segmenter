@@ -26,7 +26,7 @@ const initialDraft: FabricConnectionDraft = {
   endpointUrl: '',
   tenantId: '',
   clientId: '',
-  authMode: 'obo',
+  authMode: 'service_principal',
   workspaceId: '',
   schemaVersion: '',
   clientSecret: ''
