@@ -20,6 +20,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm ci --prefix api --omit=dev
       - run: npm run build
       - name: Copy Static Web Apps config
         run: cp staticwebapp.config.json dist/staticwebapp.config.json
