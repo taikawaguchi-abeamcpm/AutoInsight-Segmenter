@@ -6,9 +6,10 @@ const columnRole = (column) => {
   if (has(column.name, /(^|_)(customer|account|user|member).*id$|^id$/)) return 'customer_id';
   if (has(column.name, /(created|updated|ordered|event|date|time|timestamp|at)$/)) return 'event_time';
   if (has(column.name, /(converted|conversion|purchased|churn|target|label|is_.*|flag)$/)) return 'target';
-  if (column.isPrimaryKey || column.isForeignKey) return 'segment_key';
   return 'feature';
 };
+
+const validColumnRoles = new Set(['customer_id', 'event_time', 'target', 'feature', 'excluded']);
 
 const tableRole = (table) => {
   if (has(table.name, /(customer|account|user|member|client)/)) return 'customer_master';
@@ -110,9 +111,22 @@ const normalizeSemanticMapping = (mapping, dataset) => {
   );
 
   const tableMappings = (mapping.tableMappings || []).filter((table) => tableIds.has(table.tableId));
-  const columnMappings = (mapping.columnMappings || []).filter(
-    (column) => columnIds.has(column.columnId) && validColumnForTable.get(column.columnId) === column.tableId
-  );
+  const fallbackColumnById = new Map(fallback.columnMappings.map((column) => [column.columnId, column]));
+  const columnMappings = (mapping.columnMappings || [])
+    .filter((column) => columnIds.has(column.columnId) && validColumnForTable.get(column.columnId) === column.tableId)
+    .map((column) => {
+      if (validColumnRoles.has(column.columnRole)) {
+        return column;
+      }
+
+      const fallbackColumn = fallbackColumnById.get(column.columnId);
+      return {
+        ...column,
+        columnRole: fallbackColumn?.columnRole || 'feature',
+        featureConfig: fallbackColumn?.featureConfig,
+        targetConfig: fallbackColumn?.targetConfig
+      };
+    });
   const joinDefinitions = (mapping.joinDefinitions || []).filter(
     (join) =>
       tableIds.has(join.fromTableId) &&

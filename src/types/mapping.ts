@@ -23,8 +23,6 @@ export type SemanticColumnRole =
   | 'event_time'
   | 'target'
   | 'feature'
-  | 'segment_key'
-  | 'label'
   | 'excluded';
 
 export type MappingSource = 'manual' | 'suggested' | 'imported';

@@ -610,7 +610,7 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto auto;
   column-gap: 8px;
   row-gap: 4px;
-  align-items: center;
+  align-items: start;
   margin: 6px 0 0 16px;
   border-radius: 8px;
   background: #ffffff;
@@ -627,9 +627,8 @@ textarea {
 .column-main span,
 .column-main small {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .column-main small,
@@ -672,6 +671,7 @@ textarea {
 .definition-list dd {
   margin: 0;
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .sample-list {

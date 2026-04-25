@@ -19,8 +19,6 @@ const columnLabels: Record<SemanticColumnRole, string> = {
   event_time: 'イベント日時',
   target: '目的変数',
   feature: '特徴量',
-  segment_key: 'セグメントキー',
-  label: '表示ラベル',
   excluded: '分析対象外'
 };
 
@@ -86,30 +84,36 @@ export const MappingScreen = ({
     });
   }, [fabricDataset, mapping, searchQuery, showOnlyUnmapped]);
 
-  const updateColumnRole = (role: SemanticColumnRole) => {
+  const upsertColumnMapping = (patch: Partial<Pick<ColumnSemanticMapping, 'columnRole' | 'businessName'>>) => {
     if (!mapping || !selectedColumn) {
       return;
     }
+
+    const currentMapping = mapping.columnMappings.find((column) => column.columnId === selectedColumn.id);
+    const role = patch.columnRole ?? currentMapping?.columnRole ?? 'excluded';
+    const businessName = patch.businessName ?? currentMapping?.businessName ?? selectedColumn.displayName;
 
     const nextColumnMapping: ColumnSemanticMapping = {
       columnId: selectedColumn.id,
       tableId: selectedColumn.tableId,
       columnRole: role,
-      businessName: columnLabels[role],
+      businessName,
       source: 'manual',
       status: 'mapped',
+      confidence: currentMapping?.confidence,
+      reason: currentMapping?.reason,
       featureConfig:
         role === 'feature'
           ? {
               featureKey: selectedColumn.name,
-              label: selectedColumn.displayName,
+              label: businessName,
               dataType: selectedColumn.dataType,
               aggregation: selectedColumn.dataType === 'float' || selectedColumn.dataType === 'integer' ? 'sum' : 'latest',
               missingValuePolicy: selectedColumn.dataType === 'string' ? 'unknown_category' : 'zero_fill',
               enabled: true
             }
           : undefined,
-      targetConfig: role === 'target' ? { targetKey: selectedColumn.name, label: selectedColumn.displayName } : undefined
+      targetConfig: role === 'target' ? { targetKey: selectedColumn.name, label: businessName } : undefined
     };
 
     setMapping({
@@ -119,6 +123,14 @@ export const MappingScreen = ({
         nextColumnMapping
       ]
     });
+  };
+
+  const updateColumnRole = (role: SemanticColumnRole) => {
+    upsertColumnMapping({ columnRole: role });
+  };
+
+  const updateBusinessName = (businessName: string) => {
+    upsertColumnMapping({ businessName });
   };
 
   const selectTable = (table: FabricTable) => {
@@ -290,6 +302,12 @@ export const MappingScreen = ({
                   <dd>{selectedColumn.isPrimaryKey ? 'PK' : selectedColumn.isForeignKey ? 'FK' : 'なし'}</dd>
                 </dl>
                 {selectedColumnMapping?.reason ? <p className="notice"><Sparkles size={16} /> {selectedColumnMapping.reason}</p> : null}
+                <Field label="論理名">
+                  <input
+                    value={selectedColumnMapping?.businessName ?? selectedColumn.displayName}
+                    onChange={(event) => updateBusinessName(event.target.value)}
+                  />
+                </Field>
                 <Field label="セマンティック役割">
                   <select value={selectedColumnMapping?.columnRole ?? 'excluded'} onChange={(event) => updateColumnRole(event.target.value as SemanticColumnRole)}>
                     {Object.entries(columnLabels).map(([value, label]) => (

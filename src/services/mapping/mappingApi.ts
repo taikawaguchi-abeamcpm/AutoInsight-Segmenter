@@ -9,6 +9,7 @@ export interface MappingBootstrap {
 }
 
 const NON_BUSINESS_FIELD_NAMES = new Set(['items', 'endCursor', 'hasNextPage', 'groupBy', 'nodes', 'edges', 'pageInfo', 'totalCount']);
+const VALID_COLUMN_ROLES = new Set(['customer_id', 'event_time', 'target', 'feature', 'excluded']);
 
 const isBusinessColumn = (column: FabricColumn) =>
   column.name.trim().length > 0 &&
@@ -33,7 +34,12 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
     mapping: {
       ...mapping,
       tableMappings: mapping.tableMappings.filter((table) => tableIds.has(table.tableId)),
-      columnMappings: mapping.columnMappings.filter((column) => columnIds.has(column.columnId)),
+      columnMappings: mapping.columnMappings
+        .filter((column) => columnIds.has(column.columnId))
+        .map((column) => ({
+          ...column,
+          columnRole: VALID_COLUMN_ROLES.has(column.columnRole) ? column.columnRole : 'feature'
+        })),
       joinDefinitions: mapping.joinDefinitions.filter(
         (join) =>
           tableIds.has(join.fromTableId) &&
