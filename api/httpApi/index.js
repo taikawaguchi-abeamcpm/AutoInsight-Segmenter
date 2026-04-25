@@ -138,8 +138,19 @@ const routes = {
 
   'POST fabric-connections/test': async (req, context) => {
     const draft = readBody(req);
-    validateDraft(draft, { requireSecret: draft.authMode === 'service_principal' });
-    const schema = await introspectFabric(draft, req);
+    const id = `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
+    const { queryAll } = getStore();
+    const rawExisting = (await queryAll('fabricConnections', {
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: id }]
+    }))[0];
+    const testConnection = {
+      ...draft,
+      clientSecret: draft.clientSecret?.trim() || rawExisting?.clientSecret
+    };
+
+    validateDraft(testConnection, { requireSecret: testConnection.authMode === 'service_principal' });
+    const schema = await introspectFabric(testConnection, req);
     const fields = schema.queryType?.fields || [];
 
     json(context, 200, {
