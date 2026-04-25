@@ -226,9 +226,8 @@ export const MappingScreen = ({
                             >
                               <span className="column-main">
                                 <span>{column.displayName}</span>
-                                <small>{column.name}</small>
+                                <small>{column.name} / {column.dataType}</small>
                               </span>
-                              <small className="column-type">{column.dataType}</small>
                               {columnMapping ? <Badge tone="info">{columnLabels[columnMapping.columnRole]}</Badge> : null}
                             </button>
                           );
