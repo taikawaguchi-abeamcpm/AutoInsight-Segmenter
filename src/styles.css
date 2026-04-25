@@ -113,11 +113,13 @@ button:disabled {
 .main-content {
   min-width: 0;
   padding: 28px;
+  overflow-x: clip;
 }
 
 .screen {
   display: grid;
   gap: 18px;
+  min-width: 0;
   padding-bottom: 92px;
 }
 
@@ -205,6 +207,7 @@ button:disabled {
 .field {
   display: grid;
   gap: 6px;
+  min-width: 0;
   color: #52636d;
   font-size: 13px;
   font-weight: 650;
@@ -225,6 +228,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-width: 0;
   border: 1px solid #ccd8dd;
   border-radius: 8px;
   background: #ffffff;
@@ -293,7 +297,7 @@ textarea {
 
 .mapping-workspace {
   display: grid;
-  grid-template-columns: minmax(360px, 0.72fr) minmax(640px, 1.28fr);
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
   gap: 18px;
   align-items: start;
 }
@@ -306,7 +310,8 @@ textarea {
 
 .mapping-source-panel {
   max-height: calc(100vh - 250px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .source-tree,
@@ -323,6 +328,7 @@ textarea {
 .source-columns button,
 .feature-check-row {
   width: 100%;
+  min-width: 0;
   border: 1px solid #d9e3e7;
   border-radius: 8px;
   background: #ffffff;
@@ -354,7 +360,7 @@ textarea {
 .source-table strong,
 .source-columns strong,
 .feature-check-row strong {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 
@@ -363,25 +369,23 @@ textarea {
 .feature-check-row small,
 .subtle-text {
   color: #687983;
+  overflow-wrap: anywhere;
 }
 
 .source-columns {
   margin: 6px 0 0 18px;
 }
 
-.source-columns button,
-.feature-check-row {
-  display: flex;
+.source-columns button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: flex-start;
-  justify-content: space-between;
   padding: 10px 12px;
 }
 
-.source-columns button span,
-.feature-check-row span {
-  flex: 1 1 220px;
-  min-width: 180px;
+.source-columns button span {
+  min-width: 0;
 }
 
 .mapping-tabs {
@@ -408,6 +412,7 @@ textarea {
 .editor-panel {
   display: grid;
   gap: 14px;
+  overflow: hidden;
 }
 
 .editor-form {
@@ -420,12 +425,21 @@ textarea {
 
 .join-editor-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(120px, 1fr)) 40px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   align-items: end;
   border: 1px solid #d9e3e7;
   border-radius: 8px;
   padding: 12px;
+  min-width: 0;
+}
+
+.join-editor-row .field {
+  min-width: 0;
+}
+
+.join-editor-row .icon-button {
+  justify-self: end;
 }
 
 .role-assignment-grid {
@@ -439,6 +453,23 @@ textarea {
   max-height: 430px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.feature-check-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+}
+
+.feature-check-row input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.feature-check-row span {
+  min-width: 0;
 }
 
 .segment-grid {
@@ -571,11 +602,13 @@ textarea {
   display: inline-flex;
   align-items: center;
   width: max-content;
+  max-width: 100%;
   min-height: 24px;
   border-radius: 999px;
   padding: 0 9px;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .badge-neutral {
@@ -998,6 +1031,15 @@ textarea {
   backdrop-filter: blur(8px);
 }
 
+.mapping-action-bar {
+  position: sticky;
+  right: auto;
+  bottom: 18px;
+  left: auto;
+  z-index: 3;
+  width: 100%;
+}
+
 .admin-action-bar {
   left: calc(260px + 28px + var(--admin-list-width) + var(--admin-grid-gap));
 }
@@ -1069,6 +1111,11 @@ textarea {
   .action-bar {
     left: 18px;
     right: 18px;
+  }
+
+  .mapping-action-bar {
+    left: auto;
+    right: auto;
   }
 
   .admin-action-bar {

@@ -629,7 +629,7 @@ export const MappingScreen = ({
         </div>
       </div>
 
-      <footer className="action-bar">
+      <footer className="action-bar mapping-action-bar">
         <span>特徴量 {featureMappings.length} 件</span>
         <strong>エラー {errorCount} / 警告 {warningCount}</strong>
         <Button onClick={validateAndContinue}>分析へ進む</Button>
