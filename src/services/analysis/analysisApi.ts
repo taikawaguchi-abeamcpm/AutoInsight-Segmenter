@@ -1,4 +1,4 @@
-import { delay, makeHash, type RequestOptions } from '../client';
+import { apiRequest, delay, makeHash, type RequestOptions } from '../client';
 import { buildAnalysisSummary, nowIso } from '../mockData';
 import type {
   AnalysisInputSummary,
@@ -109,6 +109,15 @@ export const analysisApi = {
   },
 
   async start(mappingDocumentId: string, config: AnalysisRunConfig, options: RequestOptions = {}): Promise<StartAnalysisResult> {
+    const response = await apiRequest<StartAnalysisResult>('/analysis/start', {
+      method: 'POST',
+      body: JSON.stringify({ mappingDocumentId, config }),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(240, options.signal);
 
     return {

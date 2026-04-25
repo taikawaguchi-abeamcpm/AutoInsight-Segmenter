@@ -1,0 +1,16 @@
+{
+  "name": "autoinsight-segmenter-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start",
+    "test": "node scripts/check-syntax.js"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.4.1",
+    "@azure/functions": "^4.8.0",
+    "@azure/identity": "^4.13.0"
+  }
+}

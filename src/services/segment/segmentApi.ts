@@ -1,4 +1,4 @@
-import { delay, type RequestOptions } from '../client';
+import { apiRequest, delay, type RequestOptions } from '../client';
 import { buildSegmentDraft, nowIso } from '../mockData';
 import type { SelectedSegmentContext } from '../../types/results';
 import type { SegmentDraft, SegmentPreviewSummary, SegmentSaveResult } from '../../types/segment';
@@ -30,6 +30,15 @@ export const segmentApi = {
   },
 
   async save(draft: SegmentDraft, options: RequestOptions = {}): Promise<SegmentSaveResult> {
+    const response = await apiRequest<SegmentSaveResult>('/segments/save', {
+      method: 'POST',
+      body: JSON.stringify({ draft }),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(220, options.signal);
 
     return {

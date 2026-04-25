@@ -1,4 +1,4 @@
-import { delay, type RequestOptions } from '../client';
+import { apiRequest, delay, type RequestOptions } from '../client';
 import { buildDefaultMapping, mockFabricDataset, nowIso } from '../mockData';
 import type { SelectedDatasetContext } from '../../types/dataset';
 import type { FabricDataset, SemanticMappingDocument } from '../../types/mapping';
@@ -25,6 +25,15 @@ export const mappingApi = {
   },
 
   async saveDraft(mapping: SemanticMappingDocument, options: RequestOptions = {}): Promise<SemanticMappingDocument> {
+    const response = await apiRequest<SemanticMappingDocument>('/mappings/save', {
+      method: 'POST',
+      body: JSON.stringify(mapping),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(140, options.signal);
 
     return {

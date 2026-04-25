@@ -1,5 +1,5 @@
 import type { FabricConnectionConfig, FabricConnectionDraft, FabricConnectionTestResult } from '../../types/admin';
-import { createApiError, delay, makeHash } from '../client';
+import { apiRequest, createApiError, delay, makeHash } from '../client';
 import { nowIso } from '../mockData';
 
 const STORAGE_KEY = 'autoinsight.fabricConnections.v1';
@@ -79,16 +79,36 @@ const validateDraft = (draft: FabricConnectionDraft) => {
 
 export const fabricConnectionApi = {
   async list(): Promise<FabricConnectionConfig[]> {
+    const response = await apiRequest<FabricConnectionConfig[]>('/fabric-connections');
+    if (response) {
+      savedConnections = response;
+      writeConnections(savedConnections);
+      return response;
+    }
+
     await delay(140);
     return [...savedConnections];
   },
 
   async getActive(): Promise<FabricConnectionConfig | null> {
+    const response = await apiRequest<FabricConnectionConfig | null>('/fabric-connections/active');
+    if (response !== null) {
+      return response;
+    }
+
     await delay(80);
     return savedConnections.find((connection) => connection.isActive && connection.status === 'ready') ?? null;
   },
 
   async test(draft: FabricConnectionDraft): Promise<FabricConnectionTestResult> {
+    const response = await apiRequest<FabricConnectionTestResult>('/fabric-connections/test', {
+      method: 'POST',
+      body: JSON.stringify(draft)
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(460);
     validateDraft(draft);
 
@@ -102,6 +122,16 @@ export const fabricConnectionApi = {
   },
 
   async save(draft: FabricConnectionDraft): Promise<FabricConnectionConfig> {
+    const response = await apiRequest<FabricConnectionConfig>('/fabric-connections', {
+      method: 'POST',
+      body: JSON.stringify(draft)
+    });
+    if (response) {
+      savedConnections = [response, ...savedConnections.filter((connection) => connection.id !== response.id).map((connection) => ({ ...connection, isActive: false }))];
+      writeConnections(savedConnections);
+      return response;
+    }
+
     await delay(260);
     validateDraft(draft);
 
@@ -132,6 +162,15 @@ export const fabricConnectionApi = {
   },
 
   async remove(connectionId: string): Promise<FabricConnectionConfig[]> {
+    const response = await apiRequest<FabricConnectionConfig[]>(`/fabric-connections/${encodeURIComponent(connectionId)}`, {
+      method: 'DELETE'
+    });
+    if (response) {
+      savedConnections = response;
+      writeConnections(savedConnections);
+      return response;
+    }
+
     await delay(180);
 
     const target = savedConnections.find((connection) => connection.id === connectionId);

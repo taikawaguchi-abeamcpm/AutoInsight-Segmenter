@@ -6,6 +6,12 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+interface ApiRequestOptions extends RequestInit {
+  signal?: AbortSignal;
+}
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
+
 export const delay = (ms = DEFAULT_DELAY_MS, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -50,6 +56,48 @@ export const isApiError = (error: unknown): error is ApiError =>
   'code' in error &&
   'message' in error &&
   'correlationId' in error;
+
+export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T | null> => {
+  const url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers
+      }
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
+    return null;
+  }
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const payload = contentType.includes('application/json') ? await response.json() : null;
+
+  if (!response.ok) {
+    if (payload && isApiError(payload)) {
+      throw payload;
+    }
+
+    throw createApiError({
+      code: `HTTP.${response.status}`,
+      message: response.statusText || 'API request failed.',
+      retryable: response.status >= 500
+    });
+  }
+
+  return payload as T;
+};
 
 export const makeHash = (value: unknown): string => {
   const source = JSON.stringify(value);

@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "COSMOS_ENDPOINT": "https://<account>.documents.azure.com:443/",
+    "COSMOS_DATABASE_NAME": "autoinsight",
+    "COSMOS_CONNECTIONS_CONTAINER": "fabricConnections",
+    "COSMOS_MAPPINGS_CONTAINER": "semanticMappings",
+    "COSMOS_ANALYSIS_RUNS_CONTAINER": "analysisRuns",
+    "COSMOS_ANALYSIS_RESULTS_CONTAINER": "analysisResults",
+    "COSMOS_SEGMENTS_CONTAINER": "segments",
+    "COSMOS_AUDIT_CONTAINER": "auditLogs"
+  }
+}
