@@ -1,7 +1,8 @@
-const { containerFor, containerNames, queryAll, removeById, upsert } = require('../src/cosmosStore');
 const { correlationId, makeHash, nowIso } = require('../src/http');
 
 const actor = 'system';
+
+const getStore = () => require('../src/cosmosStore');
 
 const json = (context, status, body) => {
   context.res = {
@@ -69,6 +70,7 @@ const validateDraft = (draft) => {
 };
 
 const listConnections = async () => {
+  const { queryAll } = getStore();
   const records = await queryAll('fabricConnections', {
     query: 'SELECT * FROM c ORDER BY c.updatedAt DESC'
   });
@@ -76,7 +78,34 @@ const listConnections = async () => {
 };
 
 const routes = {
+  'GET ping': async (_req, context) => {
+    json(context, 200, {
+      status: 'ok',
+      checkedAt: nowIso(),
+      runtime: 'node',
+      message: 'AutoInsight API is running.'
+    });
+  },
+
+  'GET cosmos/config': async (_req, context) => {
+    json(context, 200, {
+      hasCosmosEndpoint: Boolean(process.env.COSMOS_ENDPOINT),
+      hasCosmosConnectionString: Boolean(process.env.COSMOS_CONNECTION_STRING),
+      hasCosmosKey: Boolean(process.env.COSMOS_KEY),
+      databaseName: process.env.COSMOS_DATABASE_NAME || process.env.COSMOS_DATABASE || 'autoinsight',
+      containers: {
+        fabricConnections: process.env.COSMOS_CONNECTIONS_CONTAINER || 'fabricConnections',
+        semanticMappings: process.env.COSMOS_MAPPINGS_CONTAINER || 'semanticMappings',
+        analysisRuns: process.env.COSMOS_ANALYSIS_RUNS_CONTAINER || 'analysisRuns',
+        analysisResults: process.env.COSMOS_ANALYSIS_RESULTS_CONTAINER || 'analysisResults',
+        segments: process.env.COSMOS_SEGMENTS_CONTAINER || 'segments',
+        auditLogs: process.env.COSMOS_AUDIT_CONTAINER || 'auditLogs'
+      }
+    });
+  },
+
   'GET cosmos/health': async (_req, context) => {
+    const { containerFor, containerNames } = getStore();
     const checked = [];
     for (const logicalName of Object.keys(containerNames)) {
       const { partitionPath } = await containerFor(logicalName);
@@ -99,6 +128,7 @@ const routes = {
   },
 
   'GET fabric-connections/active': async (_req, context) => {
+    const { queryAll } = getStore();
     const records = await queryAll('fabricConnections', {
       query: 'SELECT * FROM c WHERE c.isActive = true AND c.status = "ready" ORDER BY c.updatedAt DESC'
     });
@@ -126,6 +156,7 @@ const routes = {
     const now = nowIso();
     const current = await listConnections();
     const existing = current.find((connection) => connection.id === id);
+    const { upsert } = getStore();
 
     await Promise.all(
       current
@@ -157,6 +188,7 @@ const routes = {
 
   'POST mappings/save': async (req, context) => {
     const mapping = readBody(req);
+    const { upsert } = getStore();
     const saved = await upsert('semanticMappings', {
       ...mapping,
       partitionKey: mapping.datasetId || 'default',
@@ -170,6 +202,7 @@ const routes = {
 
   'POST analysis/start': async (req, context) => {
     const { mappingDocumentId, config } = readBody(req);
+    const { upsert } = getStore();
     const now = nowIso();
     const runId = `run-${makeHash({ mappingDocumentId, config })}`;
     const analysisJobId = `job-${makeHash({ runId, now })}`;
@@ -201,6 +234,7 @@ const routes = {
 
   'POST analysis-results': async (req, context) => {
     const result = readBody(req);
+    const { upsert } = getStore();
     const saved = await upsert('analysisResults', {
       ...result,
       id: result.id || result.analysisJobId,
@@ -213,6 +247,7 @@ const routes = {
 
   'POST segments/prepare': async (req, context) => {
     const contextBody = readBody(req);
+    const { upsert } = getStore();
     await upsert('segments', {
       id: `segment-selection-${contextBody.analysisJobId}`,
       partitionKey: contextBody.analysisJobId || 'default',
@@ -226,6 +261,7 @@ const routes = {
 
   'POST segments/save': async (req, context) => {
     const { draft, result } = readBody(req);
+    const { upsert } = getStore();
     const now = nowIso();
     const savedDraft = await upsert('segments', {
       ...draft,
@@ -266,6 +302,7 @@ module.exports = async function (context, req) {
   try {
     const deleteMatch = route.match(/^fabric-connections\/([^/]+)$/);
     if (req.method.toUpperCase() === 'DELETE' && deleteMatch) {
+      const { removeById, upsert } = getStore();
       const deleted = await removeById('fabricConnections', decodeURIComponent(deleteMatch[1]));
       if (!deleted) {
         error(context, 404, 'CONNECTION.NOT_FOUND', '削除対象の接続設定が見つかりません。');
@@ -283,6 +320,7 @@ module.exports = async function (context, req) {
 
     const resultMatch = route.match(/^analysis-results\/([^/]+)$/);
     if (req.method.toUpperCase() === 'GET' && resultMatch) {
+      const { queryAll } = getStore();
       const records = await queryAll('analysisResults', {
         query: 'SELECT * FROM c WHERE c.analysisJobId = @analysisJobId ORDER BY c.updatedAt DESC',
         parameters: [{ name: '@analysisJobId', value: decodeURIComponent(resultMatch[1]) }]
