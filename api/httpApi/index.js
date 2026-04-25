@@ -191,7 +191,9 @@ const routes = {
     const { upsert } = getStore();
     const saved = await upsert('semanticMappings', {
       ...mapping,
-      partitionKey: mapping.datasetId || 'default',
+      tenantId: mapping.tenantId || 'default',
+      tenantDatasetKey: mapping.tenantDatasetKey || `${mapping.tenantId || 'default'}#${mapping.datasetId || 'unknown'}`,
+      partitionKey: mapping.tenantDatasetKey || `${mapping.tenantId || 'default'}#${mapping.datasetId || 'unknown'}`,
       version: Number(mapping.version || 0) + 1,
       updatedAt: nowIso(),
       updatedBy: actor
@@ -210,7 +212,8 @@ const routes = {
 
     await upsert('analysisRuns', {
       id: analysisJobId,
-      partitionKey: mappingDocumentId || 'default',
+      tenantId: 'default',
+      partitionKey: 'default',
       datasetId: 'unknown',
       mappingDocumentId,
       mode: config?.mode || 'custom',
@@ -238,7 +241,8 @@ const routes = {
     const saved = await upsert('analysisResults', {
       ...result,
       id: result.id || result.analysisJobId,
-      partitionKey: result.analysisJobId || 'default',
+      jobId: result.jobId || result.analysisJobId || 'default',
+      partitionKey: result.jobId || result.analysisJobId || 'default',
       updatedAt: nowIso()
     });
 
@@ -250,7 +254,8 @@ const routes = {
     const { upsert } = getStore();
     await upsert('segments', {
       id: `segment-selection-${contextBody.analysisJobId}`,
-      partitionKey: contextBody.analysisJobId || 'default',
+      tenantId: contextBody.tenantId || 'default',
+      partitionKey: contextBody.tenantId || 'default',
       kind: 'selectedSegmentContext',
       ...contextBody,
       updatedAt: nowIso()
@@ -266,7 +271,8 @@ const routes = {
     const savedDraft = await upsert('segments', {
       ...draft,
       id: draft.id,
-      partitionKey: draft.analysisJobId || 'default',
+      tenantId: draft.tenantId || 'default',
+      partitionKey: draft.tenantId || 'default',
       kind: 'segmentDraft',
       status: draft.outputConfig?.executionTiming === 'now' ? 'executed' : 'saved',
       updatedAt: now
@@ -285,7 +291,8 @@ const routes = {
 
     await upsert('segments', {
       id: saveResult.segmentExecutionId || saveResult.segmentId,
-      partitionKey: draft.analysisJobId || 'default',
+      tenantId: draft.tenantId || 'default',
+      partitionKey: draft.tenantId || 'default',
       kind: 'segmentSaveResult',
       ...saveResult,
       updatedAt: now

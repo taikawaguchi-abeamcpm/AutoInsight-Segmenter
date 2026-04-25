@@ -86,9 +86,12 @@ const queryAll = async (logicalName, querySpec) => {
 const upsert = async (logicalName, document) => {
   const { container, partitionPath } = await containerFor(logicalName);
   const now = new Date().toISOString();
+  const partitionField = partitionPath.replace(/^\//, '');
+  const partitionValue = document[partitionField] ?? document.partitionKey ?? document.tenantId ?? 'default';
   const next = {
     ...document,
-    partitionKey: document.partitionKey ?? document.tenantId ?? 'default',
+    partitionKey: document.partitionKey ?? partitionValue,
+    [partitionField]: partitionValue,
     tenantId: document.tenantId ?? 'default',
     updatedAt: document.updatedAt ?? now
   };
