@@ -1,4 +1,6 @@
 const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
+const ROW_COUNT_PAGE_SIZE = Number(process.env.FABRIC_ROW_COUNT_PAGE_SIZE || 1000);
+const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 1000);
 
 const getGraphqlApiName = (endpointUrl) => {
   try {
@@ -212,28 +214,30 @@ const findField = (type, fieldName) => (type?.fields || []).find((field) => fiel
 
 const isNonNullType = (type) => type?.kind === 'NON_NULL';
 
-const fieldArguments = (field) => {
-  const args = field?.args || [];
-  if (!args.some((arg) => arg.name === 'first')) {
-    return '';
+const fieldArguments = (field, { first, after } = {}) => {
+  const availableArgs = new Set((field?.args || []).map((arg) => arg.name));
+  const args = [];
+  if (typeof first === 'number' && availableArgs.has('first')) {
+    args.push(`first: ${first}`);
+  }
+  if (after && availableArgs.has('after')) {
+    args.push(`after: ${JSON.stringify(after)}`);
   }
 
-  // Fabric connection fields generally accept first/after. Asking for one item
-  // keeps the query cheap while allowing totalCount to be returned.
-  return '(first: 1)';
+  return args.length ? `(${args.join(', ')})` : '';
 };
 
-const rowCountSource = (field, objectTypes) => {
-  const connectionType = objectTypes.get(unwrapNamedType(field.type));
-  const totalCountField = findField(connectionType, 'totalCount');
-  if (!totalCountField) {
+const hasUnsupportedRequiredArgs = (field) =>
+  (field.args || []).some((arg) => isNonNullType(arg.type) && arg.defaultValue == null && !['first', 'after'].includes(arg.name));
+
+const rowCountTotalSource = (field, objectTypes) => {
+  if (hasUnsupportedRequiredArgs(field)) {
     return null;
   }
 
-  const unsupportedRequiredArgs = (field.args || []).filter(
-    (arg) => isNonNullType(arg.type) && arg.defaultValue == null && arg.name !== 'first'
-  );
-  if (unsupportedRequiredArgs.length > 0) {
+  const connectionType = objectTypes.get(unwrapNamedType(field.type));
+  const totalCountField = findField(connectionType, 'totalCount');
+  if (!totalCountField) {
     return null;
   }
 
@@ -254,14 +258,34 @@ const resolveRowType = (field, objectTypes) => {
   return directType;
 };
 
-const fetchRowCounts = async (connection, req, tableFields, objectTypes) => {
-  const countableFields = tableFields.filter((field) => rowCountSource(field, objectTypes));
+const rowCountPageSource = (field, objectTypes) => {
+  if (hasUnsupportedRequiredArgs(field)) {
+    return null;
+  }
+
+  const connectionType = objectTypes.get(unwrapNamedType(field.type));
+  const itemsField = findField(connectionType, 'items');
+  if (!itemsField || !isListType(itemsField.type)) {
+    return null;
+  }
+
+  const rowType = objectTypes.get(unwrapNamedType(itemsField.type));
+  const selector = (rowType?.fields || []).filter(isBusinessColumn)[0]?.name;
+  if (!selector) {
+    return null;
+  }
+
+  return { selector };
+};
+
+const fetchTotalCountHints = async (connection, req, tableFields, objectTypes) => {
+  const countableFields = tableFields.filter((field) => rowCountTotalSource(field, objectTypes));
   if (countableFields.length === 0) {
     return new Map();
   }
 
   const selections = countableFields
-    .map((field, index) => `t${index}: ${field.name}${fieldArguments(field)} { totalCount }`)
+    .map((field, index) => `t${index}: ${field.name}${fieldArguments(field, { first: 1 })} { totalCount }`)
     .join('\n');
 
   try {
@@ -282,6 +306,59 @@ const fetchRowCounts = async (connection, req, tableFields, objectTypes) => {
   } catch {
     return new Map();
   }
+};
+
+const fetchPagedRowCount = async (connection, req, field, selector) => {
+  let count = 0;
+  let after;
+
+  for (let page = 0; page < ROW_COUNT_MAX_PAGES; page += 1) {
+    const args = fieldArguments(field, { first: ROW_COUNT_PAGE_SIZE, after });
+    const data = await executeFabricGraphql(
+      connection,
+      req,
+      `query AutoInsightPagedRowCount {
+        page: ${field.name}${args} {
+          items {
+            ${selector}
+          }
+          endCursor
+          hasNextPage
+        }
+      }`
+    );
+    const result = data?.page;
+    const items = Array.isArray(result?.items) ? result.items : [];
+    count += items.length;
+
+    if (!result?.hasNextPage || !result?.endCursor || items.length === 0) {
+      break;
+    }
+
+    after = result.endCursor;
+  }
+
+  return count;
+};
+
+const fetchRowCounts = async (connection, req, tableFields, objectTypes) => {
+  const counts = await fetchTotalCountHints(connection, req, tableFields, objectTypes);
+  const missingFields = tableFields.filter((field) => typeof counts.get(field.name) !== 'number');
+
+  for (const field of missingFields) {
+    const source = rowCountPageSource(field, objectTypes);
+    if (!source) {
+      continue;
+    }
+
+    try {
+      counts.set(field.name, await fetchPagedRowCount(connection, req, field, source.selector));
+    } catch {
+      // Row count is best-effort. Schema and mapping can still be used without it.
+    }
+  }
+
+  return counts;
 };
 
 const isBusinessQueryField = (field, objectTypes) => {

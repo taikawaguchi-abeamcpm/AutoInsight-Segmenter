@@ -220,7 +220,8 @@ type AnalysisResultDocument {
 5. ユーザーが `Fabric に接続` を押したら、管理画面の有効接続設定に紐づく endpoint へ疎通確認クエリを送る。
 6. `fabricDatasetSchema` でテーブル一覧とカラムメタデータを取得する。
 7. Query フィールドの戻り値に `totalCount` が公開されている場合は、`first: 1` 相当の軽量クエリでテーブルごとの行数目安を取得する。
-8. サンプル値は `sample:read` 権限がある場合のみ取得し、PII候補はマスクする。
+8. `totalCount` が公開されていない場合は、`items / endCursor / hasNextPage` と `first / after` によるページングで、必要最小限の1列だけを取得しながら行数目安を取得する。
+9. サンプル値は `sample:read` 権限がある場合のみ取得し、PII候補はマスクする。
 
 ## 12. 疎通確認クエリ案
 実Fabricスキーマはデータソースごとに異なるため、初期疎通は introspection または軽量な公開テーブルの `first: 1` 相当クエリで確認する。
@@ -236,7 +237,7 @@ query FabricHealthCheck {
 ```
 
 ## 13. 行数取得クエリ案
-Fabric GraphQL の公開スキーマが connection 型に `totalCount` を持つ場合のみ、行数目安を取得する。`totalCount` がないテーブル、または必須引数を補えないテーブルは未取得扱いにする。
+Fabric GraphQL の公開スキーマが connection 型に `totalCount` を持つ場合は、まず `totalCount` を利用する。`totalCount` がない場合は、`items / endCursor / hasNextPage` によるページングで行数を数える。必須引数を補えないテーブルは未取得扱いにする。
 
 ```graphql
 query FabricRowCounts {
@@ -245,6 +246,20 @@ query FabricRowCounts {
   }
   appointments(first: 1) {
     totalCount
+  }
+}
+```
+
+`totalCount` がない場合のフォールバック例:
+
+```graphql
+query FabricRowCountPage {
+  accounts(first: 1000, after: "<cursor>") {
+    items {
+      id
+    }
+    endCursor
+    hasNextPage
   }
 }
 ```
@@ -264,6 +279,6 @@ query FabricRowCounts {
 - Microsoft Learn: https://learn.microsoft.com/en-us/fabric/data-engineering/api-graphql-service-principal
 
 ## 16. 変更履歴
-- 2026-04-26: 実接続時の `totalCount` による行数取得方針を追記。
+- 2026-04-26: 実接続時の `totalCount` およびページングによる行数取得方針を追記。
 - 2026-04-24: Fabric 接続情報を管理画面で入力・保存する方式に更新。
 - 2026-04-24: `/design` 成果物として Fabric GraphQL 接続とデータスキーマを追加。
