@@ -6,6 +6,8 @@
   color: #17202a;
   background: #f4f7f9;
   letter-spacing: 0;
+  --admin-list-width: 420px;
+  --admin-grid-gap: 18px;
 }
 
 * {
@@ -84,6 +86,10 @@ button:disabled {
   background: transparent;
   color: #c9d7d2;
   text-align: left;
+}
+
+.step-nav button.admin-step {
+  grid-template-columns: 20px 1fr;
 }
 
 .step-nav button.active,
@@ -294,9 +300,14 @@ textarea {
 
 .admin-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(520px, 1.1fr);
-  gap: 18px;
+  grid-template-columns: minmax(320px, var(--admin-list-width)) minmax(0, 1fr);
+  gap: var(--admin-grid-gap);
   align-items: start;
+}
+
+.list-panel,
+.detail-panel {
+  min-width: 0;
 }
 
 .panel,
@@ -348,6 +359,7 @@ textarea {
 .dataset-card {
   display: grid;
   gap: 12px;
+  overflow: hidden;
   padding: 16px;
 }
 
@@ -363,6 +375,46 @@ textarea {
 .dataset-card h2 {
   margin: 0;
   font-size: 17px;
+}
+
+.dataset-card p {
+  overflow-wrap: anywhere;
+}
+
+.connection-list-title,
+.connection-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-list-title {
+  justify-content: space-between;
+}
+
+.connection-list-title h2,
+.connection-title-row h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-panel-heading {
+  align-items: flex-start;
+}
+
+.connection-title-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connection-title-row {
+  flex-wrap: wrap;
+}
+
+.connection-title-row h2 {
+  font-size: 22px;
 }
 
 .badge {
@@ -460,6 +512,36 @@ textarea {
   font-size: 20px;
 }
 
+.connection-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 18px;
+  border-block: 1px solid #e0e8ec;
+  background: #f8fbfc;
+  padding: 12px 14px;
+}
+
+.connection-summary div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connection-summary dt {
+  color: #60737c;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.connection-summary dd {
+  min-width: 0;
+  margin: 0;
+  color: #15232b;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .detail-section {
   display: grid;
   gap: 10px;
@@ -487,6 +569,16 @@ textarea {
 .status-strip {
   grid-template-columns: 22px minmax(0, 1fr);
   border: 1px solid #d8e3e8;
+  border-radius: 8px;
+  background: #f8fbfc;
+  padding: 10px;
+}
+
+.checklist-strip {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
   border-radius: 8px;
   background: #f8fbfc;
   padding: 10px;
@@ -729,6 +821,20 @@ textarea {
   backdrop-filter: blur(8px);
 }
 
+.admin-action-bar {
+  left: calc(260px + 28px + var(--admin-list-width) + var(--admin-grid-gap));
+}
+
+.admin-action-bar .button-danger {
+  border-color: #c33a30;
+  background: #ffffff;
+  color: #a12c21;
+}
+
+.admin-action-bar .button-danger:hover:not(:disabled) {
+  background: #fde8e5;
+}
+
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -757,6 +863,10 @@ textarea {
     font-size: 12px;
   }
 
+  .step-nav button.admin-step {
+    grid-template-columns: 1fr;
+  }
+
   .step-nav button span {
     display: none;
   }
@@ -778,6 +888,10 @@ textarea {
     left: 18px;
     right: 18px;
   }
+
+  .admin-action-bar {
+    left: 18px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -788,6 +902,7 @@ textarea {
   }
 
   .metrics-grid,
+  .connection-summary,
   .form-grid,
   .role-grid {
     grid-template-columns: 1fr;
@@ -796,7 +911,8 @@ textarea {
   .bar-list button,
   .feature-row,
   .condition-row,
-  .status-strip {
+  .status-strip,
+  .checklist-strip {
     grid-template-columns: 1fr;
   }
 }

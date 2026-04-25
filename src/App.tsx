@@ -7,13 +7,14 @@ import { MappingScreen } from './components/mapping/MappingScreen';
 import { ResultsVisualizationScreen } from './components/results/ResultsVisualizationScreen';
 import { SegmentCreationScreen } from './components/segment/SegmentCreationScreen';
 import type { SelectedDatasetContext } from './types/dataset';
-import type { SemanticMappingDocument } from './types/mapping';
+import type { FabricDataset, SemanticMappingDocument } from './types/mapping';
 import type { SelectedSegmentContext } from './types/results';
 
 export default function App() {
   const [currentStep, setCurrentStep] = useState<AppStep>('dataset');
   const [datasetContext, setDatasetContext] = useState<SelectedDatasetContext | null>(null);
   const [mapping, setMapping] = useState<SemanticMappingDocument | null>(null);
+  const [fabricDataset, setFabricDataset] = useState<FabricDataset | null>(null);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [segmentContext, setSegmentContext] = useState<SelectedSegmentContext | null>(null);
 
@@ -50,6 +51,7 @@ export default function App() {
           onSelected={(context) => {
             setDatasetContext(context);
             setMapping(null);
+            setFabricDataset(null);
             setAnalysisJobId(null);
             setSegmentContext(null);
             setCurrentStep('mapping');
@@ -67,8 +69,9 @@ export default function App() {
         <MappingScreen
           datasetContext={datasetContext}
           onBack={() => setCurrentStep('dataset')}
-          onCompleted={(nextMapping) => {
+          onCompleted={(nextMapping, nextDataset) => {
             setMapping(nextMapping);
+            setFabricDataset(nextDataset);
             setAnalysisJobId(null);
             setSegmentContext(null);
             setCurrentStep('analysis');
@@ -77,10 +80,11 @@ export default function App() {
       );
     }
 
-    if (currentStep === 'analysis' && mapping) {
+    if (currentStep === 'analysis' && mapping && fabricDataset) {
       return (
         <AnalysisRunScreen
           mapping={mapping}
+          fabricDataset={fabricDataset}
           onBack={() => setCurrentStep('mapping')}
           onStarted={(nextAnalysisJobId) => {
             setAnalysisJobId(nextAnalysisJobId);

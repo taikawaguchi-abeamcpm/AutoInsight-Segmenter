@@ -31,7 +31,7 @@ export const MappingScreen = ({
 }: {
   datasetContext: SelectedDatasetContext;
   onBack: () => void;
-  onCompleted: (mapping: SemanticMappingDocument) => void;
+  onCompleted: (mapping: SemanticMappingDocument, dataset: FabricDataset) => void;
 }) => {
   const [fabricDataset, setFabricDataset] = useState<FabricDataset | null>(null);
   const [mapping, setMapping] = useState<SemanticMappingDocument | null>(null);
@@ -131,8 +131,8 @@ export const MappingScreen = ({
     const validated = await mappingApi.validate(mapping);
     setMapping(validated);
 
-    if (!validated.validationIssues.some((issue) => issue.blocking)) {
-      onCompleted(validated);
+    if (!validated.validationIssues.some((issue) => issue.blocking) && fabricDataset) {
+      onCompleted(validated, fabricDataset);
     }
   };
 

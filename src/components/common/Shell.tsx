@@ -37,17 +37,18 @@ export const Shell = ({
           const Icon = step.icon;
           const disabled = !unlockedSteps.includes(step.id);
           const active = step.id === currentStep;
+          const className = [active ? 'active' : '', step.id === 'admin' ? 'admin-step' : ''].filter(Boolean).join(' ');
 
           return (
             <button
               key={step.id}
               type="button"
-              className={active ? 'active' : ''}
+              className={className}
               aria-current={active ? 'step' : undefined}
               disabled={disabled}
               onClick={() => onNavigate(step.id)}
             >
-              <span>{step.id === 'admin' ? 'A' : index}</span>
+              {step.id === 'admin' ? null : <span>{index}</span>}
               <Icon aria-hidden="true" />
               {step.label}
             </button>

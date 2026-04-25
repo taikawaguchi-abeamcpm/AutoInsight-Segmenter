@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fabricConnectionApi } from '../../services/admin/fabricConnectionApi';
 import { isApiError } from '../../services/client';
 import type { FabricAuthMode, FabricConnectionConfig, FabricConnectionDraft, FabricConnectionStatus, FabricConnectionTestResult } from '../../types/admin';
-import { Badge, Button, Card, EmptyState, Field, Metric, formatDateTime } from '../common/ui';
+import { Badge, Button, Card, EmptyState, Field, formatDateTime } from '../common/ui';
 
 const statusLabel: Record<FabricConnectionStatus, string> = {
   unconfigured: '未設定',
@@ -198,11 +198,13 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
               onClick={() => applyConnectionToDraft(connection)}
             >
               <div>
-                <h2>{connection.displayName}</h2>
+                <div className="connection-list-title">
+                  <h2>{connection.displayName}</h2>
+                  <Badge tone={statusTone[connection.status]}>{statusLabel[connection.status]}</Badge>
+                </div>
                 <p>{connection.endpointUrl}</p>
               </div>
               <div className="card-row">
-                <Badge tone={statusTone[connection.status]}>{statusLabel[connection.status]}</Badge>
                 {connection.isActive ? <Badge tone="info">有効</Badge> : null}
                 <Badge tone="neutral">{connection.authMode === 'obo' ? 'OBO' : 'Service principal'}</Badge>
               </div>
@@ -215,22 +217,36 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
         </section>
 
         <Card className="detail-panel">
-          <div className="panel-heading">
-            <div>
-              <h2>接続情報</h2>
+          <div className="panel-heading admin-panel-heading">
+            <div className="connection-title-block">
+              <div className="connection-title-row">
+                <h2>{draft.displayName || '新規接続'}</h2>
+                <Badge tone={testResult ? statusTone[testResult.status] : selectedConnection ? statusTone[selectedConnection.status] : 'neutral'}>
+                  {testResult ? statusLabel[testResult.status] : selectedConnection ? statusLabel[selectedConnection.status] : '未設定'}
+                </Badge>
+              </div>
               <p>Client Secret はサーバー側の秘密情報ストアにのみ保存する前提です。</p>
             </div>
-            <Badge tone={testResult ? statusTone[testResult.status] : selectedConnection ? statusTone[selectedConnection.status] : 'neutral'}>
-              {testResult ? statusLabel[testResult.status] : selectedConnection ? statusLabel[selectedConnection.status] : '未設定'}
-            </Badge>
           </div>
 
-          <div className="metrics-grid">
-            <Metric label="有効接続" value={activeConnection?.displayName ?? '-'} />
-            <Metric label="認証方式" value={draft.authMode === 'obo' ? 'OBO' : 'SPN'} />
-            <Metric label="Secret" value={selectedConnection?.secretConfigured || draft.clientSecret ? '登録済み' : '-'} />
-            <Metric label="最終確認" value={formatDateTime(testResult?.testedAt ?? selectedConnection?.lastTestedAt)} />
-          </div>
+          <dl className="connection-summary">
+            <div>
+              <dt>認証方式</dt>
+              <dd>{draft.authMode === 'obo' ? 'OBO' : 'SPN'}</dd>
+            </div>
+            <div>
+              <dt>Secret</dt>
+              <dd>{selectedConnection?.secretConfigured || draft.clientSecret ? '登録済み' : '-'}</dd>
+            </div>
+            <div>
+              <dt>Workspace</dt>
+              <dd>{draft.workspaceId || '-'}</dd>
+            </div>
+            <div>
+              <dt>最終確認</dt>
+              <dd>{formatDateTime(testResult?.testedAt ?? selectedConnection?.lastTestedAt)}</dd>
+            </div>
+          </dl>
 
           {message ? <p className="notice success">{message}</p> : null}
           {error ? <p className="notice danger">{error}</p> : null}
@@ -282,15 +298,15 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
 
           <section className="detail-section">
             <h3>確認項目</h3>
-            <div className="status-strip">
+            <div className="checklist-strip">
               <ShieldCheck size={18} />
               <span>GraphQL API Execute 権限と基礎データソース権限を確認します。</span>
             </div>
-            <div className="status-strip">
+            <div className="checklist-strip">
               <KeyRound size={18} />
               <span>秘密情報はサーバー側で暗号化し、画面には登録状態だけを返します。</span>
             </div>
-            <div className="status-strip">
+            <div className="checklist-strip">
               <CheckCircle2 size={18} />
               <span>疎通確認では introspection または軽量クエリを実行します。</span>
             </div>
@@ -298,9 +314,8 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
         </Card>
       </div>
 
-      <footer className="action-bar">
+      <footer className="action-bar admin-action-bar">
         <span>{connections.length} 件の接続設定</span>
-        <strong>{activeConnection ? `${activeConnection.displayName} / ${statusLabel[activeConnection.status]}` : '未設定'}</strong>
         <div className="actions">
           <Button variant="danger" onClick={removeConnection} disabled={!selectedConnection || testing || saving || deleting}>
             <Trash2 size={16} /> {deleting ? '削除中' : '削除'}

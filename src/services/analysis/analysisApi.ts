@@ -9,10 +9,11 @@ import type {
   CustomAnalysisConfig,
   StartAnalysisResult
 } from '../../types/analysis';
+import type { FabricDataset, SemanticMappingDocument } from '../../types/mapping';
 
 export interface AnalysisBootstrap {
   summary: AnalysisInputSummary;
-  defaultConfig: AnalysisRunConfig;
+  defaultConfig: AnalysisRunConfig | null;
 }
 
 export const createDefaultConfig = (summary: AnalysisInputSummary, mode: AnalysisMode): AnalysisRunConfig => {
@@ -50,9 +51,23 @@ export const createDefaultConfig = (summary: AnalysisInputSummary, mode: Analysi
 };
 
 export const analysisApi = {
-  async bootstrap(mappingDocumentId: string, options: RequestOptions = {}): Promise<AnalysisBootstrap> {
+  async bootstrap(mappingOrId: string | SemanticMappingDocument, dataset?: FabricDataset, options: RequestOptions = {}): Promise<AnalysisBootstrap> {
+    if (typeof mappingOrId !== 'string' && dataset) {
+      const response = await apiRequest<AnalysisBootstrap>('/analysis/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({ mapping: mappingOrId, dataset }),
+        signal: options.signal
+      });
+      if (response) {
+        return {
+          ...response,
+          defaultConfig: response.defaultConfig ?? createDefaultConfig(response.summary, 'custom')
+        };
+      }
+    }
+
     await delay(undefined, options.signal);
-    const summary = buildAnalysisSummary(mappingDocumentId);
+    const summary = buildAnalysisSummary(typeof mappingOrId === 'string' ? mappingOrId : mappingOrId.id);
 
     return {
       summary,
@@ -108,10 +123,16 @@ export const analysisApi = {
     };
   },
 
-  async start(mappingDocumentId: string, config: AnalysisRunConfig, options: RequestOptions = {}): Promise<StartAnalysisResult> {
+  async start(mappingOrId: string | SemanticMappingDocument, config: AnalysisRunConfig, options: RequestOptions = {}, dataset?: FabricDataset): Promise<StartAnalysisResult> {
+    const mappingDocumentId = typeof mappingOrId === 'string' ? mappingOrId : mappingOrId.id;
     const response = await apiRequest<StartAnalysisResult>('/analysis/start', {
       method: 'POST',
-      body: JSON.stringify({ mappingDocumentId, config }),
+      body: JSON.stringify({
+        mappingDocumentId,
+        mapping: typeof mappingOrId === 'string' ? undefined : mappingOrId,
+        dataset,
+        config
+      }),
       signal: options.signal
     });
     if (response) {

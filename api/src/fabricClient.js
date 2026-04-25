@@ -104,6 +104,25 @@ const introspectFabric = async (connection, req) => {
             }
           }
         }
+        types {
+          kind
+          name
+          fields {
+            name
+            type {
+              kind
+              name
+              ofType {
+                kind
+                name
+                ofType {
+                  kind
+                  name
+                }
+              }
+            }
+          }
+        }
       }
     }`
   );
@@ -119,6 +138,75 @@ const typeName = (type) => {
   return current?.name || current?.kind || 'unknown';
 };
 
+const graphTypeName = typeName;
+
+const toFabricDataType = (name) => {
+  const value = String(name || '').toLowerCase();
+  if (['int', 'integer', 'long', 'short', 'byte'].includes(value)) return 'integer';
+  if (['float', 'decimal', 'double', 'single'].includes(value)) return 'float';
+  if (['boolean', 'bool'].includes(value)) return 'boolean';
+  if (value === 'date') return 'date';
+  if (['datetime', 'timestamp', 'datetimeoffset'].includes(value)) return 'datetime';
+  if (value.includes('list') || value.includes('array')) return 'array';
+  return 'string';
+};
+
+const titleize = (value) =>
+  String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const unwrapNamedType = (type) => {
+  let current = type;
+  while (current?.ofType) {
+    current = current.ofType;
+  }
+  return current?.name || null;
+};
+
+const buildFabricDatasetFromSchema = (connection, schema, makeHash) => {
+  const fields = schema.queryType?.fields || [];
+  const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
+  const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
+
+  const tables = fields
+    .filter((field) => !field.name.startsWith('__'))
+    .map((field) => {
+      const objectType = objectTypes.get(unwrapNamedType(field.type));
+      const columns = (objectType?.fields || []).filter((column) => !column.name.startsWith('__'));
+      return {
+        id: `tbl-${field.name}`,
+        name: field.name,
+        displayName: titleize(field.name),
+        description: objectType?.name ? `GraphQL type: ${objectType.name}` : undefined,
+        columns: columns.map((column) => {
+          const columnTypeName = graphTypeName(column.type);
+          const lower = column.name.toLowerCase();
+          return {
+            id: `col-${field.name}-${column.name}`,
+            tableId: `tbl-${field.name}`,
+            name: column.name,
+            displayName: titleize(column.name),
+            dataType: toFabricDataType(columnTypeName),
+            nullable: column.type?.kind !== 'NON_NULL',
+            isPrimaryKey: lower === 'id' || lower.endsWith('_id') || lower.endsWith('id'),
+            isForeignKey: lower.endsWith('_id') && lower !== 'id',
+            sampleValues: undefined
+          };
+        })
+      };
+    });
+
+  return {
+    id: datasetId,
+    workspaceId: connection.workspaceId || 'workspace未指定',
+    name: getGraphqlApiName(connection.endpointUrl),
+    displayName: `${connection.displayName} (${getGraphqlApiName(connection.endpointUrl)})`,
+    lastSyncedAt: new Date().toISOString(),
+    tables
+  };
+};
+
 const getActiveConnection = async () => {
   const { queryAll } = require('./cosmosStore');
   const records = await queryAll('fabricConnections', {
@@ -132,8 +220,10 @@ const buildDataset = async (connection, req, makeHash) => {
   const fields = schema.queryType?.fields || [];
   const apiName = getGraphqlApiName(connection.endpointUrl);
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
+  const fabricDataset = buildFabricDatasetFromSchema(connection, schema, makeHash);
 
   return {
+    fabricDataset,
     dataset: {
       id: datasetId,
       name: apiName,
@@ -142,14 +232,14 @@ const buildDataset = async (connection, req, makeHash) => {
       workspaceName: connection.workspaceId ? `Workspace ${connection.workspaceId}` : connection.displayName,
       description: `Fabric GraphQL endpoint から取得したQueryスキーマです。`,
       tags: ['Fabric', 'GraphQL', '実接続'],
-      tableCount: fields.length,
+      tableCount: fabricDataset.tables.length,
       lastSyncedAt: new Date().toISOString(),
       connectionStatus: 'ready',
       recommended: fields.length > 0,
       recommendationScore: fields.length > 0 ? 90 : 40,
       recommendationReasons: [
         'Fabric GraphQL endpoint への実接続に成功しました',
-        `${fields.length} 件のQueryフィールドを検出しました`
+        `${fabricDataset.tables.length} 件のテーブル候補を検出しました`
       ],
       recentlyUsed: true,
       warningCodes: []
@@ -158,15 +248,15 @@ const buildDataset = async (connection, req, makeHash) => {
       datasetId,
       ownerName: connection.displayName,
       rowEstimate: undefined,
-      columnCount: fields.length,
+      columnCount: fabricDataset.tables.reduce((sum, table) => sum + table.columns.length, 0),
       primaryKeyCandidateCount: 0,
-      timestampColumnCount: fields.filter((field) => /date|time|timestamp/i.test(field.name)).length,
+      timestampColumnCount: fabricDataset.tables.flatMap((table) => table.columns).filter((column) => column.dataType === 'date' || column.dataType === 'datetime' || /date|time|timestamp/i.test(column.name)).length,
       sampleAvailable: false,
-      topTables: fields.map((field) => ({
-        tableId: `query-${field.name}`,
-        tableName: field.name,
+      topTables: fabricDataset.tables.map((table) => ({
+        tableId: table.id,
+        tableName: table.displayName,
         suggestedRole: 'unknown',
-        typeName: typeName(field.type)
+        rowCount: table.rowCount
       })),
       warnings: fields.length === 0
         ? [{ code: 'LOW_TABLE_COUNT', severity: 'warning', message: 'Queryフィールドを検出できませんでした。Fabric側の公開設定を確認してください。' }]
@@ -176,6 +266,7 @@ const buildDataset = async (connection, req, makeHash) => {
 };
 
 module.exports = {
+  buildFabricDatasetFromSchema,
   buildDataset,
   executeFabricGraphql,
   getActiveConnection,

@@ -4,6 +4,7 @@ import { isAbortError, makeHash } from '../../services/client';
 import { analysisApi, createDefaultConfig } from '../../services/analysis/analysisApi';
 import type { AnalysisInputSummary, AnalysisMode, AnalysisRunConfig, AnalysisRunValidation, CustomAnalysisConfig } from '../../types/analysis';
 import type { SemanticMappingDocument } from '../../types/mapping';
+import type { FabricDataset } from '../../types/mapping';
 import { Badge, Button, Card, Field, Metric, formatNumber, formatPercent } from '../common/ui';
 
 const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRunConfig): AnalysisRunValidation => {
@@ -68,10 +69,12 @@ const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRu
 
 export const AnalysisRunScreen = ({
   mapping,
+  fabricDataset,
   onBack,
   onStarted
 }: {
   mapping: SemanticMappingDocument;
+  fabricDataset: FabricDataset;
   onBack: () => void;
   onStarted: (analysisJobId: string) => void;
 }) => {
@@ -85,11 +88,12 @@ export const AnalysisRunScreen = ({
     const controller = new AbortController();
 
     analysisApi
-      .bootstrap(mapping.id, { signal: controller.signal })
+      .bootstrap(mapping, fabricDataset, { signal: controller.signal })
       .then((bootstrap) => {
+        const defaultConfig = bootstrap.defaultConfig ?? createDefaultConfig(bootstrap.summary, 'custom');
         setSummary(bootstrap.summary);
-        setConfig(bootstrap.defaultConfig);
-        setValidation(validateConfigLocally(bootstrap.summary, bootstrap.defaultConfig));
+        setConfig(defaultConfig);
+        setValidation(validateConfigLocally(bootstrap.summary, defaultConfig));
       })
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
@@ -100,7 +104,7 @@ export const AnalysisRunScreen = ({
       });
 
     return () => controller.abort();
-  }, [mapping.id]);
+  }, [fabricDataset, mapping]);
 
   useEffect(() => {
     if (!summary || !config) {
@@ -195,7 +199,7 @@ export const AnalysisRunScreen = ({
 
     setSubmitting(true);
     try {
-      const started = await analysisApi.start(mapping.id, config);
+      const started = await analysisApi.start(mapping, config, {}, fabricDataset);
       onStarted(started.analysisJobId);
     } finally {
       setSubmitting(false);

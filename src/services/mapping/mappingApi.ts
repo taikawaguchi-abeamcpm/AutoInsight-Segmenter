@@ -10,6 +10,15 @@ export interface MappingBootstrap {
 
 export const mappingApi = {
   async bootstrap(context: SelectedDatasetContext, options: RequestOptions = {}): Promise<MappingBootstrap> {
+    const response = await apiRequest<MappingBootstrap>('/mappings/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify(context),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
     await delay(undefined, options.signal);
 
     return {

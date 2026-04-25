@@ -1,5 +1,6 @@
 const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
+const { buildAnalysisResult, buildAnalysisSummary, buildSemanticMapping } = require('../src/semanticModel');
 
 const actor = 'system';
 
@@ -223,6 +224,28 @@ const routes = {
     });
   },
 
+  'POST mappings/bootstrap': async (req, context) => {
+    const body = readBody(req);
+    const connection = await getActiveConnection();
+    if (!connection) {
+      error(context, 404, 'FABRIC.NO_ACTIVE_CONNECTION', '有効なFabric接続がありません。');
+      return;
+    }
+
+    const { fabricDataset } = await buildDataset(connection, req, makeHash);
+    const dataset = { ...fabricDataset, id: body.datasetId || fabricDataset.id, displayName: body.datasetName || fabricDataset.displayName };
+    const { queryAll } = getStore();
+    const existing = (await queryAll('semanticMappings', {
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: `map-${dataset.id}` }]
+    }))[0];
+
+    json(context, 200, {
+      dataset,
+      mapping: existing || buildSemanticMapping(dataset)
+    });
+  },
+
   'POST mappings/save': async (req, context) => {
     const mapping = readBody(req);
     const { upsert } = getStore();
@@ -240,12 +263,15 @@ const routes = {
   },
 
   'POST analysis/start': async (req, context) => {
-    const { mappingDocumentId, config } = readBody(req);
+    const { mappingDocumentId, mapping, dataset, config } = readBody(req);
     const { upsert } = getStore();
     const now = nowIso();
     const runId = `run-${makeHash({ mappingDocumentId, config })}`;
     const analysisJobId = `job-${makeHash({ runId, now })}`;
     const estimatedDurationSeconds = config?.mode === 'autopilot' ? 600 : 240;
+    const activeConnection = dataset ? null : await getActiveConnection();
+    const resolvedDataset = dataset || (activeConnection ? (await buildDataset(activeConnection, req, makeHash)).fabricDataset : null);
+    const resolvedMapping = mapping || null;
 
     await upsert('analysisRuns', {
       id: analysisJobId,
@@ -263,12 +289,36 @@ const routes = {
       updatedAt: now
     });
 
+    if (resolvedDataset && resolvedMapping) {
+      const result = buildAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+      await upsert('analysisResults', {
+        ...result,
+        id: result.analysisJobId,
+        jobId: result.analysisJobId,
+        partitionKey: result.analysisJobId,
+        updatedAt: now
+      });
+    }
+
     json(context, 200, {
       analysisJobId,
       runId,
       status: 'queued',
       startedAt: now,
       estimatedDurationSeconds
+    });
+  },
+
+  'POST analysis/bootstrap': async (req, context) => {
+    const { mapping, dataset } = readBody(req);
+    if (!mapping || !dataset) {
+      error(context, 400, 'ANALYSIS.BOOTSTRAP_INPUT_REQUIRED', '分析入力にはmappingとdatasetが必要です。');
+      return;
+    }
+
+    json(context, 200, {
+      summary: buildAnalysisSummary(mapping, dataset),
+      defaultConfig: null
     });
   },
 
