@@ -64,9 +64,7 @@ export const MappingScreen = ({
 
   const selectedTable = fabricDataset?.tables.find((table) => table.id === selectedTableId) ?? null;
   const selectedColumn =
-    selectedTable?.columns.find((column) => column.id === selectedColumnId) ??
-    fabricDataset?.tables.flatMap((table) => table.columns).find((column) => column.id === selectedColumnId) ??
-    null;
+    selectedTable?.columns.find((column) => column.id === selectedColumnId) ?? null;
   const selectedColumnMapping = mapping?.columnMappings.find((column) => column.columnId === selectedColumnId) ?? null;
 
   const filteredTables = useMemo(() => {
@@ -121,6 +119,11 @@ export const MappingScreen = ({
         nextColumnMapping
       ]
     });
+  };
+
+  const selectTable = (table: FabricTable) => {
+    setSelectedTableId(table.id);
+    setSelectedColumnId(table.columns[0]?.id ?? null);
   };
 
   const validateAndContinue = async () => {
@@ -192,7 +195,7 @@ export const MappingScreen = ({
                       type="button"
                       className={table.id === selectedTableId ? 'selected' : ''}
                       aria-pressed={table.id === selectedTableId}
-                      onClick={() => setSelectedTableId(table.id)}
+                      onClick={() => selectTable(table)}
                     >
                       <Database size={16} />
                       <span>{table.displayName}</span>
@@ -209,8 +212,11 @@ export const MappingScreen = ({
                               aria-pressed={column.id === selectedColumnId}
                               onClick={() => setSelectedColumnId(column.id)}
                             >
-                              <span>{column.displayName}</span>
-                              <small>{column.dataType}</small>
+                              <span className="column-main">
+                                <span>{column.displayName}</span>
+                                <small>{column.name}</small>
+                              </span>
+                              <small className="column-type">{column.dataType}</small>
                               {columnMapping ? <Badge tone="info">{columnLabels[columnMapping.columnRole]}</Badge> : null}
                             </button>
                           );

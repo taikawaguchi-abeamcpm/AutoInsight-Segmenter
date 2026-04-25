@@ -99,6 +99,37 @@ const buildSemanticMapping = (dataset) => {
   };
 };
 
+const normalizeSemanticMapping = (mapping, dataset) => {
+  if (!mapping) return buildSemanticMapping(dataset);
+
+  const fallback = buildSemanticMapping(dataset);
+  const tableIds = new Set(dataset.tables.map((table) => table.id));
+  const columnIds = new Set(dataset.tables.flatMap((table) => table.columns.map((column) => column.id)));
+  const validColumnForTable = new Map(
+    dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, table.id]))
+  );
+
+  const tableMappings = (mapping.tableMappings || []).filter((table) => tableIds.has(table.tableId));
+  const columnMappings = (mapping.columnMappings || []).filter(
+    (column) => columnIds.has(column.columnId) && validColumnForTable.get(column.columnId) === column.tableId
+  );
+  const joinDefinitions = (mapping.joinDefinitions || []).filter(
+    (join) =>
+      tableIds.has(join.fromTableId) &&
+      tableIds.has(join.toTableId) &&
+      (join.fromColumnIds || []).every((columnId) => columnIds.has(columnId)) &&
+      (join.toColumnIds || []).every((columnId) => columnIds.has(columnId))
+  );
+
+  return {
+    ...mapping,
+    tableMappings: tableMappings.length ? tableMappings : fallback.tableMappings,
+    columnMappings: columnMappings.length ? columnMappings : fallback.columnMappings,
+    joinDefinitions,
+    updatedAt: nowIso()
+  };
+};
+
 const buildAnalysisSummary = (mapping, dataset) => {
   const tableById = new Map(dataset.tables.map((table) => [table.id, table]));
   const targetMapping = mapping.columnMappings.find((column) => column.columnRole === 'target') || mapping.columnMappings.find((column) => column.targetConfig);
@@ -223,5 +254,6 @@ const buildAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config })
 module.exports = {
   buildAnalysisResult,
   buildAnalysisSummary,
-  buildSemanticMapping
+  buildSemanticMapping,
+  normalizeSemanticMapping
 };

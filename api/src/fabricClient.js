@@ -99,6 +99,14 @@ const introspectFabric = async (connection, req) => {
                 ofType {
                   kind
                   name
+                  ofType {
+                    kind
+                    name
+                    ofType {
+                      kind
+                      name
+                    }
+                  }
                 }
               }
             }
@@ -118,6 +126,14 @@ const introspectFabric = async (connection, req) => {
                 ofType {
                   kind
                   name
+                  ofType {
+                    kind
+                    name
+                    ofType {
+                      kind
+                      name
+                    }
+                  }
                 }
               }
             }
@@ -164,16 +180,59 @@ const unwrapNamedType = (type) => {
   return current?.name || null;
 };
 
+const unwrapTypeRef = (type) => {
+  const chain = [];
+  let current = type;
+  while (current) {
+    chain.push(current);
+    current = current.ofType;
+  }
+  return chain;
+};
+
+const isListType = (type) => unwrapTypeRef(type).some((item) => item.kind === 'LIST');
+
+const findField = (type, fieldName) => (type?.fields || []).find((field) => field.name === fieldName);
+
+const resolveRowType = (field, objectTypes) => {
+  const directType = objectTypes.get(unwrapNamedType(field.type));
+  const itemsField = findField(directType, 'items');
+
+  if (itemsField && isListType(itemsField.type)) {
+    const itemType = objectTypes.get(unwrapNamedType(itemsField.type));
+    if (itemType) {
+      return itemType;
+    }
+  }
+
+  return directType;
+};
+
+const isBusinessQueryField = (field, objectTypes) => {
+  if (!field?.name || field.name.startsWith('__')) return false;
+  const rowType = resolveRowType(field, objectTypes);
+  return Boolean(rowType?.fields?.length);
+};
+
+const isBusinessColumn = (column) => {
+  if (!column?.name || column.name.startsWith('__')) return false;
+  if (['items', 'endCursor', 'hasNextPage', 'groupBy', 'nodes', 'edges', 'pageInfo', 'totalCount'].includes(column.name)) {
+    return false;
+  }
+
+  return !isListType(column.type);
+};
+
 const buildFabricDatasetFromSchema = (connection, schema, makeHash) => {
   const fields = schema.queryType?.fields || [];
   const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
 
   const tables = fields
-    .filter((field) => !field.name.startsWith('__'))
+    .filter((field) => isBusinessQueryField(field, objectTypes))
     .map((field) => {
-      const objectType = objectTypes.get(unwrapNamedType(field.type));
-      const columns = (objectType?.fields || []).filter((column) => !column.name.startsWith('__'));
+      const objectType = resolveRowType(field, objectTypes);
+      const columns = (objectType?.fields || []).filter(isBusinessColumn);
       return {
         id: `tbl-${field.name}`,
         name: field.name,

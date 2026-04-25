@@ -1,12 +1,49 @@
 import { apiRequest, delay, type RequestOptions } from '../client';
 import { buildDefaultMapping, mockFabricDataset, nowIso } from '../mockData';
 import type { SelectedDatasetContext } from '../../types/dataset';
-import type { FabricDataset, SemanticMappingDocument } from '../../types/mapping';
+import type { FabricColumn, FabricDataset, FabricTable, SemanticMappingDocument } from '../../types/mapping';
 
 export interface MappingBootstrap {
   dataset: FabricDataset;
   mapping: SemanticMappingDocument;
 }
+
+const NON_BUSINESS_FIELD_NAMES = new Set(['items', 'endCursor', 'hasNextPage', 'groupBy', 'nodes', 'edges', 'pageInfo', 'totalCount']);
+
+const isBusinessColumn = (column: FabricColumn) =>
+  column.name.trim().length > 0 &&
+  !column.name.startsWith('__') &&
+  !NON_BUSINESS_FIELD_NAMES.has(column.name);
+
+const normalizeTable = (table: FabricTable): FabricTable => ({
+  ...table,
+  columns: table.columns.filter(isBusinessColumn)
+});
+
+const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBootstrap => {
+  const normalizedDataset = {
+    ...dataset,
+    tables: dataset.tables.map(normalizeTable).filter((table) => table.columns.length > 0)
+  };
+  const tableIds = new Set(normalizedDataset.tables.map((table) => table.id));
+  const columnIds = new Set(normalizedDataset.tables.flatMap((table) => table.columns.map((column) => column.id)));
+
+  return {
+    dataset: normalizedDataset,
+    mapping: {
+      ...mapping,
+      tableMappings: mapping.tableMappings.filter((table) => tableIds.has(table.tableId)),
+      columnMappings: mapping.columnMappings.filter((column) => columnIds.has(column.columnId)),
+      joinDefinitions: mapping.joinDefinitions.filter(
+        (join) =>
+          tableIds.has(join.fromTableId) &&
+          tableIds.has(join.toTableId) &&
+          join.fromColumnIds.every((columnId) => columnIds.has(columnId)) &&
+          join.toColumnIds.every((columnId) => columnIds.has(columnId))
+      )
+    }
+  };
+};
 
 export const mappingApi = {
   async bootstrap(context: SelectedDatasetContext, options: RequestOptions = {}): Promise<MappingBootstrap> {
@@ -16,12 +53,12 @@ export const mappingApi = {
       signal: options.signal
     });
     if (response) {
-      return response;
+      return normalizeBootstrap(response);
     }
 
     await delay(undefined, options.signal);
 
-    return {
+    return normalizeBootstrap({
       dataset: {
         ...mockFabricDataset,
         id: context.datasetId,
@@ -30,7 +67,7 @@ export const mappingApi = {
         lastSyncedAt: context.lastSyncedAt ?? nowIso()
       },
       mapping: buildDefaultMapping(context.datasetId)
-    };
+    });
   },
 
   async saveDraft(mapping: SemanticMappingDocument, options: RequestOptions = {}): Promise<SemanticMappingDocument> {

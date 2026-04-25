@@ -1,6 +1,6 @@
 const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
-const { buildAnalysisResult, buildAnalysisSummary, buildSemanticMapping } = require('../src/semanticModel');
+const { buildAnalysisResult, buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 
 const actor = 'system';
 
@@ -242,7 +242,7 @@ const routes = {
 
     json(context, 200, {
       dataset,
-      mapping: existing || buildSemanticMapping(dataset)
+      mapping: existing ? normalizeSemanticMapping(existing, dataset) : buildSemanticMapping(dataset)
     });
   },
 
