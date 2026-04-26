@@ -85,6 +85,7 @@ export interface ColumnSemanticMapping {
 
 export type AggregationType = 'none' | 'count' | 'sum' | 'avg' | 'min' | 'max' | 'latest' | 'distinct_count';
 export type MissingValuePolicy = 'exclude' | 'zero_fill' | 'most_frequent' | 'unknown_category';
+export type FeatureValueType = 'categorical' | 'numeric';
 
 export interface TimeWindow {
   unit: 'day' | 'week' | 'month';
@@ -95,6 +96,7 @@ export interface FeatureConfig {
   featureKey: string;
   label: string;
   dataType: FabricDataType;
+  valueType: FeatureValueType;
   aggregation: AggregationType;
   timeWindow?: TimeWindow;
   missingValuePolicy: MissingValuePolicy;

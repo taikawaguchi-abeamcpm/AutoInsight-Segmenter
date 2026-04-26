@@ -32,6 +32,7 @@ export interface AnalysisFeatureSummary {
   sourceTableName: string;
   sourceColumnName: string;
   dataType: 'string' | 'integer' | 'float' | 'boolean' | 'date' | 'datetime';
+  valueType: 'categorical' | 'numeric';
   category: 'profile' | 'behavior' | 'transaction' | 'engagement' | 'derived';
   aggregation: 'none' | 'count' | 'sum' | 'avg' | 'latest' | 'distinct_count';
   timeWindowDays?: number;

@@ -153,8 +153,8 @@ export const buildDefaultMapping = (datasetId: string): SemanticMappingDocument 
   columnMappings: [
     { columnId: 'col-customer-id', tableId: 'tbl-customers', columnRole: 'customer_id', businessName: '顧客 ID', source: 'suggested', status: 'validated', confidence: 0.98, reason: '列名と主キー属性が一致' },
     { columnId: 'col-converted', tableId: 'tbl-web', columnRole: 'target', businessName: '成約', source: 'suggested', status: 'mapped', confidence: 0.86, reason: 'is_ で始まる二値列', targetConfig: { targetKey: 'converted', label: '成約', positiveValue: 'true', negativeValue: 'false', eventTimeColumnId: 'col-event-time', evaluationWindow: { unit: 'day', value: 30 } } },
-    { columnId: 'col-rank', tableId: 'tbl-customers', columnRole: 'feature', businessName: '会員ランク', source: 'suggested', status: 'mapped', confidence: 0.76, reason: '顧客属性のカテゴリ列', featureConfig: { featureKey: 'loyalty_rank', label: '会員ランク', dataType: 'string', aggregation: 'latest', missingValuePolicy: 'unknown_category', enabled: true } },
-    { columnId: 'col-amount', tableId: 'tbl-orders', columnRole: 'feature', businessName: '注文金額', source: 'suggested', status: 'mapped', confidence: 0.82, reason: '購買履歴の数値列', featureConfig: { featureKey: 'order_amount_90d', label: '90日間の注文金額', dataType: 'float', aggregation: 'sum', timeWindow: { unit: 'day', value: 90 }, missingValuePolicy: 'zero_fill', enabled: true } }
+    { columnId: 'col-rank', tableId: 'tbl-customers', columnRole: 'feature', businessName: '会員ランク', source: 'suggested', status: 'mapped', confidence: 0.76, reason: '顧客属性のカテゴリ列', featureConfig: { featureKey: 'loyalty_rank', label: '会員ランク', dataType: 'string', valueType: 'categorical', aggregation: 'latest', missingValuePolicy: 'unknown_category', enabled: true } },
+    { columnId: 'col-amount', tableId: 'tbl-orders', columnRole: 'feature', businessName: '注文金額', source: 'suggested', status: 'mapped', confidence: 0.82, reason: '購買履歴の数値列', featureConfig: { featureKey: 'order_amount_90d', label: '90日間の注文金額', dataType: 'float', valueType: 'numeric', aggregation: 'sum', timeWindow: { unit: 'day', value: 90 }, missingValuePolicy: 'zero_fill', enabled: true } }
   ],
   joinDefinitions: [
     { id: 'join-orders-customers', fromTableId: 'tbl-orders', fromColumnIds: ['col-order-customer-id'], toTableId: 'tbl-customers', toColumnIds: ['col-customer-id'], joinType: 'left', cardinality: 'many_to_one', confidence: 0.93, source: 'suggested' },
@@ -185,10 +185,10 @@ export const buildAnalysisSummary = (mappingDocumentId: string): AnalysisInputSu
     evaluationWindowDays: 30
   },
   features: [
-    { featureKey: 'loyalty_rank', label: '会員ランク', sourceTableName: '顧客', sourceColumnName: 'loyalty_rank', dataType: 'string', category: 'profile', aggregation: 'latest', enabled: true, missingRate: 0.04 },
-    { featureKey: 'order_amount_90d', label: '90日間の注文金額', sourceTableName: '注文', sourceColumnName: 'order_amount', dataType: 'float', category: 'transaction', aggregation: 'sum', timeWindowDays: 90, enabled: true, missingRate: 0.12 },
-    { featureKey: 'web_visit_count_30d', label: '30日間の訪問回数', sourceTableName: 'Web 行動', sourceColumnName: 'event_id', dataType: 'integer', category: 'behavior', aggregation: 'count', timeWindowDays: 30, enabled: true, missingRate: 0.08 },
-    { featureKey: 'email_opened_30d', label: '30日間のメール開封', sourceTableName: 'メール接触', sourceColumnName: 'opened', dataType: 'boolean', category: 'engagement', aggregation: 'count', timeWindowDays: 30, enabled: true, missingRate: 0.18 }
+    { featureKey: 'loyalty_rank', label: '会員ランク', sourceTableName: '顧客', sourceColumnName: 'loyalty_rank', dataType: 'string', valueType: 'categorical', category: 'profile', aggregation: 'latest', enabled: true, missingRate: 0.04 },
+    { featureKey: 'order_amount_90d', label: '90日間の注文金額', sourceTableName: '注文', sourceColumnName: 'order_amount', dataType: 'float', valueType: 'numeric', category: 'transaction', aggregation: 'sum', timeWindowDays: 90, enabled: true, missingRate: 0.12 },
+    { featureKey: 'web_visit_count_30d', label: '30日間の訪問回数', sourceTableName: 'Web 行動', sourceColumnName: 'event_id', dataType: 'integer', valueType: 'numeric', category: 'behavior', aggregation: 'count', timeWindowDays: 30, enabled: true, missingRate: 0.08 },
+    { featureKey: 'email_opened_30d', label: '30日間のメール開封', sourceTableName: 'メール接触', sourceColumnName: 'opened', dataType: 'boolean', valueType: 'numeric', category: 'engagement', aggregation: 'count', timeWindowDays: 30, enabled: true, missingRate: 0.18 }
   ],
   relatedTables: ['注文', 'Web 行動', 'メール接触'],
   dataQuality: {

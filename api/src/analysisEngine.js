@@ -137,7 +137,7 @@ const aggregateValues = (values, feature) => {
   const aggregation = feature.aggregation || 'latest';
   const rawValues = present.map((item) => item.value);
   const numericValues = rawValues.map(toNumber).filter((value) => value !== undefined);
-  const numericFeature = feature.dataType === 'integer' || feature.dataType === 'float';
+  const numericFeature = feature.valueType === 'numeric';
 
   if (aggregation === 'count') return present.length;
   if (aggregation === 'distinct_count') return new Set(rawValues.map(String)).size;
@@ -281,6 +281,7 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
         sourceTableName: item.table.name,
         sourceTableDisplayName: item.table.displayName,
         dataType: item.column.dataType,
+        valueType: column.featureConfig.valueType || (item.column.dataType === 'integer' || item.column.dataType === 'float' ? 'numeric' : 'categorical'),
         category: categoryForTable(item.table.name),
         aggregation: column.featureConfig.aggregation,
         plan
@@ -313,6 +314,7 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
     .map((row, index) => ({
       __rowId: index,
       __target: normalizeBool(row[target.column.name], targetConfig),
+      __sequences: {},
       __raw: row
     }))
     .filter((row) => row.__target !== undefined);
@@ -363,10 +365,23 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
     });
 
     targetRowsByKey.forEach((rowIds, key) => {
-      const aggregated = aggregateValues(featureValuesByKey.get(key) || [], feature);
+      const values = featureValuesByKey.get(key) || [];
+      const orderedValues = values
+        .filter((item) => !isMissing(item.value))
+        .sort((left, right) => {
+          if (left.at === undefined || right.at === undefined) return 0;
+          return left.at - right.at;
+        })
+        .map((item) => String(item.value));
+      const aggregated = aggregateValues(values, feature);
       rowIds.forEach((rowId) => {
         const row = rowById.get(rowId);
-        if (row) row[feature.featureKey] = aggregated;
+        if (row) {
+          row[feature.featureKey] = aggregated;
+          if (feature.category === 'transaction' && feature.valueType === 'categorical' && featureEventTimeColumnName) {
+            row.__sequences[feature.featureKey] = orderedValues;
+          }
+        }
       });
     });
   }
@@ -390,6 +405,103 @@ const matchesCondition = (row, condition) => {
   if (condition.operator === 'lte') return numeric <= condition.value;
   if (condition.operator === 'between') return numeric >= condition.value && numeric <= condition.valueTo;
   return false;
+};
+
+const mineSequentialRouteFeatures = ({ rows, features, baselineRate, minGroupCount, maxRoutes = 5 }) => {
+  const candidates = [];
+  const routeLengths = [2, 3];
+
+  features
+    .filter((feature) => feature.category === 'transaction' && feature.valueType === 'categorical')
+    .forEach((feature) => {
+      const groups = new Map();
+
+      rows.forEach((row, rowIndex) => {
+        const sequence = row.__sequences?.[feature.featureKey] || [];
+        if (sequence.length < 2) return;
+
+        const rowRoutes = new Set();
+        routeLengths.forEach((length) => {
+          if (sequence.length < length) return;
+          for (let index = 0; index <= sequence.length - length; index += 1) {
+            rowRoutes.add(sequence.slice(index, index + length).join(' → '));
+          }
+        });
+
+        rowRoutes.forEach((route) => {
+          const group = groups.get(route) || { count: 0, positives: 0, rowIndexes: [] };
+          group.count += 1;
+          group.positives += row.__target === 1 ? 1 : 0;
+          group.rowIndexes.push(rowIndex);
+          groups.set(route, group);
+        });
+      });
+
+      for (const [route, group] of groups.entries()) {
+        if (group.count < minGroupCount) continue;
+        const conversionRate = group.positives / group.count;
+        const delta = conversionRate - baselineRate;
+        if (delta <= 0) continue;
+
+        candidates.push({ feature, route, group, conversionRate, delta });
+      }
+    });
+
+  candidates.sort((left, right) => {
+    const leftScore = left.delta * Math.sqrt(left.group.count);
+    const rightScore = right.delta * Math.sqrt(right.group.count);
+    return rightScore - leftScore;
+  });
+
+  return candidates.slice(0, maxRoutes).map((candidate, index) => {
+    const featureKey = `seq_route_${index + 1}`;
+    const matchedRowIndexes = new Set(candidate.group.rowIndexes);
+    rows.forEach((row, rowIndex) => {
+      row[featureKey] = matchedRowIndexes.has(rowIndex);
+    });
+
+    const score = clampScore(candidate.delta * 140 * Math.sqrt(candidate.group.count / rows.length));
+    const label = `黄金ルート: ${candidate.route}`;
+
+    return {
+      feature: {
+        featureKey,
+        label,
+        category: 'derived',
+        aggregation: 'none',
+        valueType: 'categorical',
+        sourceTableDisplayName: candidate.feature.sourceTableDisplayName,
+        sourceColumnName: candidate.feature.sourceColumnName
+      },
+      analysis: {
+        score,
+        direction: 'positive',
+        pattern: {
+          matchedCount: candidate.group.count,
+          conversionRate: candidate.conversionRate,
+          supportRate: candidate.group.count / rows.length,
+          conversionDelta: candidate.delta,
+          lift: baselineRate > 0 ? candidate.conversionRate / baselineRate : undefined,
+          condition: {
+            featureKey,
+            operator: 'eq',
+            value: true,
+            label
+          }
+        }
+      },
+      result: {
+        featureKey,
+        label,
+        category: 'derived',
+        importanceScore: score,
+        direction: 'positive',
+        aggregation: 'none',
+        missingRate: 0,
+        description: `${candidate.feature.sourceTableDisplayName}.${candidate.feature.sourceColumnName} の時系列から抽出した順序パターンです。正解率は全体平均より ${formatPointDelta(candidate.delta)} 高いです。`
+      }
+    };
+  });
 };
 
 const buildInteractionPairs = (patterns, rows) => {
@@ -440,11 +552,12 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
   const importances = [];
 
   features.forEach((feature) => {
+    if (feature.category === 'transaction' && feature.valueType === 'categorical' && eventTimeColumnsByTable.has(feature.sourceTableId)) {
+      return;
+    }
+
     const missingCount = rows.filter((row) => isMissing(row[feature.featureKey])).length;
-    const numericFeature =
-      feature.dataType === 'integer' ||
-      feature.dataType === 'float' ||
-      ['sum', 'avg', 'count', 'distinct_count', 'min', 'max'].includes(feature.aggregation);
+    const numericFeature = feature.valueType === 'numeric' || ['sum', 'avg', 'count', 'distinct_count', 'min', 'max'].includes(feature.aggregation);
     const analysis = numericFeature
       ? analyzeNumericFeature({ rows, feature, baselineRate, minGroupCount })
       : analyzeCategoricalFeature({ rows, feature, baselineRate, minGroupCount });
@@ -465,6 +578,16 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
       }
     });
   });
+
+  importances.push(
+    ...mineSequentialRouteFeatures({
+      rows,
+      features,
+      baselineRate,
+      minGroupCount,
+      maxRoutes: Math.min(5, config?.patternCount || 5)
+    })
+  );
 
   importances.sort((left, right) => right.result.importanceScore - left.result.importanceScore);
   const topImportances = importances.slice(0, config?.maxFeatureCount || 20);

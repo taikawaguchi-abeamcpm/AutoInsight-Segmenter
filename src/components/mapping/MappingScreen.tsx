@@ -53,6 +53,9 @@ const fallbackColumnRole = (column: FabricColumn): SemanticColumnRole => {
   return 'feature';
 };
 
+const fallbackFeatureValueType = (column: FabricColumn) =>
+  column.dataType === 'integer' || column.dataType === 'float' ? 'numeric' as const : 'categorical' as const;
+
 const defaultTableMapping = (table: FabricTable): TableSemanticMapping => ({
   tableId: table.id,
   entityRole: 'dimension',
@@ -78,6 +81,7 @@ const defaultColumnMapping = (table: FabricTable, column: FabricColumn, role = f
           featureKey: column.name,
           label: column.displayName,
           dataType: column.dataType,
+          valueType: fallbackFeatureValueType(column),
           aggregation: column.dataType === 'float' || column.dataType === 'integer' ? 'sum' : 'latest',
           missingValuePolicy: column.dataType === 'string' ? 'unknown_category' : 'zero_fill',
           enabled: true
@@ -216,6 +220,7 @@ export const MappingScreen = ({
               featureKey: current.featureConfig?.featureKey ?? column.name,
               label: businessName,
               dataType: column.dataType,
+              valueType: current.featureConfig?.valueType ?? fallbackFeatureValueType(column),
               aggregation: current.featureConfig?.aggregation ?? (column.dataType === 'float' || column.dataType === 'integer' ? 'sum' : 'latest'),
               missingValuePolicy: current.featureConfig?.missingValuePolicy ?? (column.dataType === 'string' ? 'unknown_category' : 'zero_fill'),
               enabled: true
@@ -522,6 +527,24 @@ export const MappingScreen = ({
                       ))}
                     </select>
                   </Field>
+                  {selectedColumnMapping.columnRole === 'feature' && selectedColumnMapping.featureConfig ? (
+                    <Field label="特徴量の扱い">
+                      <select
+                        value={selectedColumnMapping.featureConfig.valueType ?? fallbackFeatureValueType(selectedColumn)}
+                        onChange={(event) =>
+                          upsertColumnMapping(selectedColumnTable, selectedColumn, {
+                            featureConfig: {
+                              ...selectedColumnMapping.featureConfig!,
+                              valueType: event.target.value as 'categorical' | 'numeric'
+                            }
+                          })
+                        }
+                      >
+                        <option value="categorical">カテゴリ</option>
+                        <option value="numeric">数値</option>
+                      </select>
+                    </Field>
+                  ) : null}
                 </div>
               ) : (
                 <EmptyState title="列が未選択" description="左の一覧から列を選択してください。" />

@@ -260,7 +260,7 @@ export const AnalysisRunScreen = ({
                   />
                   <span>{feature.label}</span>
                   <Badge tone="neutral">{feature.category}</Badge>
-                  <small>{feature.aggregation}{feature.timeWindowDays ? ` / ${feature.timeWindowDays}日` : ''}</small>
+                  <small>{feature.valueType === 'numeric' ? '数値' : 'カテゴリ'} / {feature.aggregation}{feature.timeWindowDays ? ` / ${feature.timeWindowDays}日` : ''}</small>
                   <small>{formatPercent(feature.missingRate)}</small>
                 </label>
               ))}

@@ -20,10 +20,13 @@ const tableRole = (table) => {
 
 const featureAggregation = (dataType) => (dataType === 'integer' || dataType === 'float' ? 'sum' : 'latest');
 
+const featureValueType = (dataType) => (dataType === 'integer' || dataType === 'float' ? 'numeric' : 'categorical');
+
 const featureConfigForColumn = (column) => ({
   featureKey: column.name,
   label: column.displayName,
   dataType: column.dataType,
+  valueType: featureValueType(column.dataType),
   aggregation: featureAggregation(column.dataType),
   missingValuePolicy: column.dataType === 'string' ? 'unknown_category' : 'zero_fill',
   enabled: true
@@ -164,6 +167,7 @@ const buildAnalysisSummary = (mapping, dataset) => {
         sourceTableName: table?.displayName || column.tableId,
         sourceColumnName: sourceColumn?.name || column.columnId,
         dataType: ['string', 'integer', 'float', 'boolean', 'date', 'datetime'].includes(column.featureConfig.dataType) ? column.featureConfig.dataType : 'string',
+        valueType: column.featureConfig.valueType || featureValueType(column.featureConfig.dataType),
         category: tableRole(table || {}) === 'transaction_fact' ? 'transaction' : tableRole(table || {}) === 'event_log' ? 'behavior' : 'profile',
         aggregation: column.featureConfig.aggregation,
         enabled: true,

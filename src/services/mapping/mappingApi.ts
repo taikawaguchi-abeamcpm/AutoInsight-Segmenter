@@ -21,6 +21,9 @@ const normalizeTable = (table: FabricTable): FabricTable => ({
   columns: table.columns.filter(isBusinessColumn)
 });
 
+const fallbackFeatureValueType = (column?: FabricColumn) =>
+  column?.dataType === 'integer' || column?.dataType === 'float' ? 'numeric' as const : 'categorical' as const;
+
 const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBootstrap => {
   const normalizedDataset = {
     ...dataset,
@@ -28,6 +31,7 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
   };
   const tableIds = new Set(normalizedDataset.tables.map((table) => table.id));
   const columnIds = new Set(normalizedDataset.tables.flatMap((table) => table.columns.map((column) => column.id)));
+  const columnById = new Map(normalizedDataset.tables.flatMap((table) => table.columns.map((column) => [column.id, column] as const)));
 
   return {
     dataset: normalizedDataset,
@@ -38,7 +42,13 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
         .filter((column) => columnIds.has(column.columnId))
         .map((column) => ({
           ...column,
-          columnRole: VALID_COLUMN_ROLES.has(column.columnRole) ? column.columnRole : 'feature'
+          columnRole: VALID_COLUMN_ROLES.has(column.columnRole) ? column.columnRole : 'feature',
+          featureConfig: column.featureConfig
+            ? {
+                ...column.featureConfig,
+                valueType: column.featureConfig.valueType ?? fallbackFeatureValueType(columnById.get(column.columnId))
+              }
+            : undefined
         })),
       joinDefinitions: mapping.joinDefinitions.filter(
         (join) =>
