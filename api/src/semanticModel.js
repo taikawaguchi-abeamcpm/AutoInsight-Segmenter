@@ -4,6 +4,7 @@ const has = (value, pattern) => pattern.test(String(value || '').toLowerCase());
 
 const columnRole = (column) => {
   if (has(column.name, /(^|_)(customer|account|user|member).*id$|^id$/)) return 'customer_id';
+  if (has(column.name, /(created|updated|ordered|event|date|time|timestamp|at)$/)) return 'event_time';
   if (has(column.name, /(converted|conversion|purchased|churn|target|label|is_.*|flag)$/)) return 'target';
   return 'feature';
 };
@@ -19,35 +20,6 @@ const tableRole = (table) => {
 
 const featureAggregation = (dataType) => (dataType === 'integer' || dataType === 'float' ? 'sum' : 'latest');
 
-const isAnalysisPeriodCandidate = (column) =>
-  ['date', 'datetime', 'timestamp'].includes(String(column.dataType || '').toLowerCase()) ||
-  has(column.name, /(created|updated|ordered|occurred|event|date|time|timestamp|at)$/);
-
-const periodColumnScore = (table, column) => {
-  let score = 0;
-  if (['date', 'datetime', 'timestamp'].includes(String(column.dataType || '').toLowerCase())) score += 20;
-  if (has(column.name, /^(event_time|event_at|occurred_at|ordered_at|created_at|timestamp)$/)) score += 20;
-  if (has(column.name, /(event|occurred|ordered|created|date|time|timestamp|at)$/)) score += 10;
-  if (tableRole(table) === 'event_log') score += 6;
-  if (tableRole(table) === 'transaction_fact') score += 4;
-  if (!column.nullable) score += 1;
-  return score;
-};
-
-const findAnalysisPeriodColumnId = (dataset, preferredTableId) => {
-  const candidates = dataset.tables.flatMap((table) =>
-    table.columns
-      .filter(isAnalysisPeriodCandidate)
-      .map((column) => ({ table, column, score: periodColumnScore(table, column) }))
-  );
-
-  const preferredCandidates = preferredTableId ? candidates.filter((candidate) => candidate.table.id === preferredTableId) : [];
-  const scopedCandidates = preferredCandidates.length ? preferredCandidates : candidates;
-
-  scopedCandidates.sort((left, right) => right.score - left.score);
-  return scopedCandidates[0]?.column.id;
-};
-
 const featureConfigForColumn = (column) => ({
   featureKey: column.name,
   label: column.displayName,
@@ -57,38 +29,8 @@ const featureConfigForColumn = (column) => ({
   enabled: true
 });
 
-const normalizeSinglePeriodColumn = (columnMappings, dataset) => {
-  const columnById = new Map(dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, column])));
-  let assigned = false;
-
-  return columnMappings.map((mapping) => {
-    if (mapping.columnRole !== 'event_time') {
-      return mapping;
-    }
-
-    if (!assigned) {
-      assigned = true;
-      return {
-        ...mapping,
-        featureConfig: undefined,
-        targetConfig: undefined
-      };
-    }
-
-    const column = columnById.get(mapping.columnId);
-    return {
-      ...mapping,
-      columnRole: 'feature',
-      targetConfig: undefined,
-      featureConfig: mapping.featureConfig || (column ? featureConfigForColumn(column) : undefined)
-    };
-  });
-};
-
 const buildSemanticMapping = (dataset) => {
   const now = nowIso();
-  const targetTable = dataset.tables.find((table) => table.columns.some((column) => columnRole(column) === 'target'));
-  const analysisPeriodColumnId = findAnalysisPeriodColumnId(dataset, targetTable?.id);
   const tableMappings = dataset.tables.map((table) => ({
     tableId: table.id,
     entityRole: tableRole(table),
@@ -101,7 +43,7 @@ const buildSemanticMapping = (dataset) => {
 
   const columnMappings = dataset.tables.flatMap((table) =>
     table.columns.map((column) => {
-      const role = column.id === analysisPeriodColumnId ? 'event_time' : columnRole(column);
+      const role = columnRole(column);
       return {
         columnId: column.id,
         tableId: table.id,
@@ -172,7 +114,7 @@ const normalizeSemanticMapping = (mapping, dataset) => {
 
   const tableMappings = (mapping.tableMappings || []).filter((table) => tableIds.has(table.tableId));
   const fallbackColumnById = new Map(fallback.columnMappings.map((column) => [column.columnId, column]));
-  const columnMappings = normalizeSinglePeriodColumn((mapping.columnMappings || [])
+  const columnMappings = (mapping.columnMappings || [])
     .filter((column) => columnIds.has(column.columnId) && validColumnForTable.get(column.columnId) === column.tableId)
     .map((column) => {
       if (validColumnRoles.has(column.columnRole)) {
@@ -186,7 +128,7 @@ const normalizeSemanticMapping = (mapping, dataset) => {
         featureConfig: fallbackColumn?.featureConfig,
         targetConfig: fallbackColumn?.targetConfig
       };
-    }), dataset);
+    });
   const joinDefinitions = (mapping.joinDefinitions || []).filter(
     (join) =>
       tableIds.has(join.fromTableId) &&

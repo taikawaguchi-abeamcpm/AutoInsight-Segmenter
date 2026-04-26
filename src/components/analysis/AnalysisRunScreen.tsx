@@ -26,24 +26,13 @@ const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRu
   }
 
   if (config.mode === 'custom') {
-    if (config.observationStartDate > config.observationEndDate) {
+    if (!config.targetPositiveValue.trim()) {
       issues.push({
-        id: 'local-invalid-observation-range',
+        id: 'local-missing-target-positive-value',
         scope: 'analysis',
         severity: 'error',
-        code: 'ANALYSIS.INVALID_OBSERVATION_RANGE',
-        message: 'Observation start date must be before the end date.',
-        blocking: true
-      });
-    }
-
-    if (config.evaluationStartDate && config.evaluationEndDate && config.evaluationStartDate > config.evaluationEndDate) {
-      issues.push({
-        id: 'local-invalid-evaluation-range',
-        scope: 'analysis',
-        severity: 'error',
-        code: 'ANALYSIS.INVALID_EVALUATION_RANGE',
-        message: 'Evaluation start date must be before the end date.',
+        code: 'ANALYSIS.MISSING_TARGET_POSITIVE_VALUE',
+        message: '目的変数の正解の値を入力してください。',
         blocking: true
       });
     }
@@ -295,14 +284,8 @@ export const AnalysisRunScreen = ({
 
           {customConfig ? (
             <div className="form-grid">
-              <Field label="学習期間 開始">
-                <input type="date" value={customConfig.observationStartDate} onChange={(event) => updateConfig({ ...customConfig, observationStartDate: event.target.value })} />
-              </Field>
-              <Field label="学習期間 終了">
-                <input type="date" value={customConfig.observationEndDate} onChange={(event) => updateConfig({ ...customConfig, observationEndDate: event.target.value })} />
-              </Field>
-              <Field label="評価期間 開始">
-                <input type="date" value={customConfig.evaluationStartDate} onChange={(event) => updateConfig({ ...customConfig, evaluationStartDate: event.target.value })} />
+              <Field label="目的変数の正解の値">
+                <input value={customConfig.targetPositiveValue} onChange={(event) => updateConfig({ ...customConfig, targetPositiveValue: event.target.value })} />
               </Field>
               <Field label="モデル方針">
                 <select

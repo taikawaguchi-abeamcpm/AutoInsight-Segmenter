@@ -50,10 +50,7 @@ export interface AnalysisDataQualitySummary {
 
 export interface CustomAnalysisConfig {
   mode: 'custom';
-  observationStartDate: string;
-  observationEndDate: string;
-  evaluationStartDate?: string;
-  evaluationEndDate?: string;
+  targetPositiveValue: string;
   analysisUnit: 'customer' | 'event';
   targetType: 'binary' | 'continuous';
   optimizationPreference: OptimizationPreference;

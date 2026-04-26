@@ -28,7 +28,7 @@ const entityLabels: Record<SemanticEntityRole, string> = {
 
 const columnLabels: Record<SemanticColumnRole, string> = {
   customer_id: '顧客ID',
-  event_time: '分析期間に使う日付/日時',
+  event_time: '日時',
   target: '目的変数',
   feature: '特徴量',
   excluded: '分析対象外'
@@ -237,10 +237,6 @@ export const MappingScreen = ({
     const withoutCurrent = mapping.columnMappings.filter((item) => item.columnId !== column.id);
     const withoutConflictingRoles = withoutCurrent.map((item) => {
       if (role === 'target' && item.columnRole === 'target') {
-        return asFeatureMapping(item, columnById);
-      }
-
-      if (role === 'event_time' && item.columnRole === 'event_time') {
         return asFeatureMapping(item, columnById);
       }
 

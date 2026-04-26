@@ -33,10 +33,7 @@ export const createDefaultConfig = (summary: AnalysisInputSummary, mode: Analysi
 
   return {
     mode: 'custom',
-    observationStartDate: '2025-10-01',
-    observationEndDate: '2026-03-31',
-    evaluationStartDate: '2026-04-01',
-    evaluationEndDate: '2026-04-23',
+    targetPositiveValue: summary.target.positiveValue ?? 'true',
     analysisUnit: 'customer',
     targetType: summary.target.dataType,
     optimizationPreference: 'balanced',
@@ -87,6 +84,17 @@ export const analysisApi = {
         severity: 'error' as const,
         code: 'NO_ENABLED_FEATURES',
         message: '有効な特徴量を 1 件以上選択してください。',
+        blocking: true
+      });
+    }
+
+    if (config.mode === 'custom' && !config.targetPositiveValue.trim()) {
+      issues.push({
+        id: 'missing-target-positive-value',
+        scope: 'analysis' as const,
+        severity: 'error' as const,
+        code: 'MISSING_TARGET_POSITIVE_VALUE',
+        message: '目的変数の正解の値を入力してください。',
         blocking: true
       });
     }

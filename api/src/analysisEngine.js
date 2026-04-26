@@ -24,26 +24,15 @@ const toTimestamp = (value) => {
   return undefined;
 };
 
-const dateStart = (date) => (date ? Date.parse(`${date}T00:00:00.000Z`) : undefined);
-const dateEndExclusive = (date) => {
-  if (!date) return undefined;
-  const start = dateStart(date);
-  return Number.isNaN(start) ? undefined : start + 24 * 60 * 60 * 1000;
-};
-
-const inDateRange = (value, startDate, endDate) => {
-  const timestamp = toTimestamp(value);
-  if (timestamp === undefined) return false;
-  const start = dateStart(startDate);
-  const end = dateEndExclusive(endDate);
-  if (start !== undefined && !Number.isNaN(start) && timestamp < start) return false;
-  if (end !== undefined && !Number.isNaN(end) && timestamp >= end) return false;
-  return true;
-};
-
 const normalizeBool = (value, targetConfig = {}) => {
   if (isMissing(value)) return undefined;
-  if (targetConfig.positiveValue !== undefined && String(value) === String(targetConfig.positiveValue)) return 1;
+  if (targetConfig.positiveValue !== undefined) {
+    if (String(value) === String(targetConfig.positiveValue)) return 1;
+    if (targetConfig.negativeValue !== undefined) {
+      return String(value) === String(targetConfig.negativeValue) ? 0 : undefined;
+    }
+    return 0;
+  }
   if (targetConfig.negativeValue !== undefined && String(value) === String(targetConfig.negativeValue)) return 0;
   if (typeof value === 'boolean') return value ? 1 : 0;
   if (typeof value === 'number') return value !== 0 ? 1 : 0;
@@ -300,27 +289,30 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
     .filter(Boolean);
 };
 
-const resolveAnalysisPeriodColumn = (mapping, dataset, targetMapping) => {
+const resolveEventTimeColumnsByTable = (mapping, dataset) => {
   const columns = columnIdMap(dataset);
-  const periodMapping = (mapping.columnMappings || []).find((column) => column.columnRole === 'event_time');
-  const periodColumnId = periodMapping?.columnId || targetMapping?.targetConfig?.eventTimeColumnId;
-  const item = periodColumnId ? columns.get(periodColumnId) : null;
-  return item ? { ...item, mapping: periodMapping } : null;
+  const byTable = new Map();
+  (mapping.columnMappings || [])
+    .filter((column) => column.columnRole === 'event_time')
+    .forEach((mappingColumn) => {
+      if (byTable.has(mappingColumn.tableId)) return;
+      const item = columns.get(mappingColumn.columnId);
+      if (item) byTable.set(mappingColumn.tableId, item.column);
+    });
+  return byTable;
 };
 
-const materializeAnalysisRows = async ({ connection, req, dataset, target, targetMapping, features, config, periodColumn }) => {
+const materializeAnalysisRows = async ({ connection, req, dataset, target, targetConfig, features, eventTimeColumnsByTable }) => {
   const columns = columnIdMap(dataset);
   const targetKeyColumnIds = features.map((feature) => feature.plan.targetKeyColumnId).filter(Boolean);
   const sameTableColumns = features.filter((feature) => feature.plan.kind === 'same').map((feature) => feature.sourceColumnName);
   const targetKeyColumns = targetKeyColumnIds.map((columnId) => columns.get(columnId)?.column.name).filter(Boolean);
-  const targetPeriodColumnName = periodColumn?.table.id === target.table.id ? periodColumn.column.name : undefined;
-  const targetFetchColumns = [target.column.name, targetPeriodColumnName, ...targetKeyColumns, ...sameTableColumns];
+  const targetFetchColumns = [target.column.name, ...targetKeyColumns, ...sameTableColumns];
   const { rows: rawTargetRows, truncated } = await fetchTableRows(connection, req, target.table.name, targetFetchColumns);
   const rows = rawTargetRows
-    .filter((row) => !targetPeriodColumnName || inDateRange(row[targetPeriodColumnName], config?.evaluationStartDate, config?.evaluationEndDate))
     .map((row, index) => ({
       __rowId: index,
-      __target: normalizeBool(row[target.column.name], targetMapping.targetConfig),
+      __target: normalizeBool(row[target.column.name], targetConfig),
       __raw: row
     }))
     .filter((row) => row.__target !== undefined);
@@ -351,23 +343,21 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
     });
     if (targetRowsByKey.size === 0) continue;
 
-    const featurePeriodColumnName = periodColumn?.table.id === feature.sourceTableId ? periodColumn.column.name : undefined;
+    const featureEventTimeColumnName = eventTimeColumnsByTable.get(feature.sourceTableId)?.name;
     const { rows: featureRows } = await fetchTableRows(connection, req, feature.sourceTableName, [
       featureKeyName,
       feature.sourceColumnName,
-      featurePeriodColumnName
+      featureEventTimeColumnName
     ]);
     const featureValuesByKey = new Map();
-    featureRows
-      .filter((featureRow) => !featurePeriodColumnName || inDateRange(featureRow[featurePeriodColumnName], config?.observationStartDate, config?.observationEndDate))
-      .forEach((featureRow) => {
+    featureRows.forEach((featureRow) => {
       const key = featureRow[featureKeyName];
       if (isMissing(key)) return;
       const textKey = String(key);
       const bucket = featureValuesByKey.get(textKey) || [];
       bucket.push({
         value: featureRow[feature.sourceColumnName],
-        at: featurePeriodColumnName ? toTimestamp(featureRow[featurePeriodColumnName]) : undefined
+        at: featureEventTimeColumnName ? toTimestamp(featureRow[featureEventTimeColumnName]) : undefined
       });
       featureValuesByKey.set(textKey, bucket);
     });
@@ -388,19 +378,24 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
   return { rows, truncated };
 };
 
+const matchesCondition = (row, condition) => {
+  const value = row[condition.featureKey];
+  if (condition.operator === 'eq') return String(value) === String(condition.value);
+  if (condition.operator === 'neq') return String(value) !== String(condition.value);
+  const numeric = toNumber(value);
+  if (numeric === undefined) return false;
+  if (condition.operator === 'gt') return numeric > condition.value;
+  if (condition.operator === 'gte') return numeric >= condition.value;
+  if (condition.operator === 'lt') return numeric < condition.value;
+  if (condition.operator === 'lte') return numeric <= condition.value;
+  if (condition.operator === 'between') return numeric >= condition.value && numeric <= condition.valueTo;
+  return false;
+};
+
 const buildInteractionPairs = (patterns, rows) => {
   if (patterns.length < 2) return [];
   const [left, right] = patterns;
-  const matches = (row, condition) => {
-    const value = row[condition.featureKey];
-    if (condition.operator === 'eq') return String(value) === String(condition.value);
-    const numeric = toNumber(value);
-    if (numeric === undefined) return false;
-    if (condition.operator === 'gte') return numeric >= condition.value;
-    if (condition.operator === 'lte') return numeric <= condition.value;
-    return false;
-  };
-  const matched = rows.filter((row) => matches(row, left.conditions[0]) && matches(row, right.conditions[0]));
+  const matched = rows.filter((row) => matchesCondition(row, left.conditions[0]) && matchesCondition(row, right.conditions[0]));
   if (matched.length === 0) return [];
   const rate = matched.filter((row) => row.__target === 1).length / matched.length;
 
@@ -426,15 +421,15 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
     return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析可能な特徴量がありません。目的変数テーブルと同一テーブル、またはjoin定義で接続できる特徴量を選択してください。' });
   }
 
-  const periodColumn = resolveAnalysisPeriodColumn(mapping, dataset, targetMapping);
-  if (config?.mode === 'custom' && !periodColumn) {
-    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析期間に使う日付/日時の列が見つからないため、期間指定を使った分析を開始できませんでした。' });
-  }
-  if (config?.mode === 'custom' && periodColumn.table.id !== target.table.id) {
-    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析期間に使う日付/日時の列は、目的変数と同じテーブルから選択してください。評価期間の判定に使えませんでした。' });
-  }
+  const targetConfig = {
+    ...(targetMapping.targetConfig || {}),
+    positiveValue: config?.mode === 'custom' && config.targetPositiveValue?.trim()
+      ? config.targetPositiveValue.trim()
+      : targetMapping.targetConfig?.positiveValue
+  };
+  const eventTimeColumnsByTable = resolveEventTimeColumnsByTable(mapping, dataset);
 
-  const { rows, truncated } = await materializeAnalysisRows({ connection, req, dataset, target, targetMapping, features, config, periodColumn });
+  const { rows, truncated } = await materializeAnalysisRows({ connection, req, dataset, target, targetConfig, features, eventTimeColumnsByTable });
   if (rows.length === 0) {
     return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '目的変数を二値として判定できる行がありませんでした。目的変数の役割または正例/負例の値を確認してください。' });
   }
@@ -488,17 +483,26 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
       recommendedAction: `${item.analysis.pattern.condition.label} を条件にしたセグメントで施策検証してください。`
     }));
 
-  const segments = patterns.map((pattern, index) => ({
-    id: `segment-real-${index + 1}`,
-    name: `${pattern.conditions[0].label} セグメント`,
-    description: '実データ集計で目的変数との差が出た顧客グループです。',
-    sourcePatternId: pattern.id,
-    estimatedAudienceSize: Math.round(pattern.supportRate * rows.length),
-    estimatedConversionRate: baselineRate + (pattern.conversionDelta || 0),
-    conditions: pattern.conditions,
-    useCase: '施策検証',
-    priorityScore: clampScore((pattern.conversionDelta || 0) * 100 + pattern.supportRate * 40 + 50)
-  }));
+  const segments = patterns
+    .filter((pattern) => (pattern.conversionDelta || 0) > 0)
+    .map((pattern, index) => {
+      const candidateRows = rows.filter(
+        (row) => row.__target !== 1 && pattern.conditions.every((condition) => matchesCondition(row, condition))
+      );
+
+      return {
+        id: `segment-real-${index + 1}`,
+        name: `${pattern.conditions[0].label} 未正解候補`,
+        description: '目的変数が正解の値ではないデータのうち、正解データに多い傾向へ近い候補です。',
+        sourcePatternId: pattern.id,
+        estimatedAudienceSize: candidateRows.length,
+        estimatedConversionRate: baselineRate + (pattern.conversionDelta || 0),
+        conditions: pattern.conditions,
+        useCase: '未正解候補リスト化',
+        priorityScore: clampScore((pattern.conversionDelta || 0) * 100 + (candidateRows.length / rows.length) * 40 + 50)
+      };
+    })
+    .filter((segment) => segment.estimatedAudienceSize > 0);
 
   return {
     id: analysisJobId,
