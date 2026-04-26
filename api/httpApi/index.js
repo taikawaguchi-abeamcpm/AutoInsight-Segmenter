@@ -42,6 +42,50 @@ const sanitize = (connection) => {
   return safe;
 };
 
+const datasetIdForConnection = (connection) =>
+  `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
+
+const readyConnections = async () => {
+  const { queryAll } = getStore();
+  return queryAll('fabricConnections', {
+    query: 'SELECT * FROM c WHERE c.status = "ready" ORDER BY c.updatedAt DESC'
+  });
+};
+
+const connectionForDatasetId = async (datasetId) =>
+  (await readyConnections()).find((connection) => datasetIdForConnection(connection) === datasetId) || null;
+
+const fallbackDatasetForConnection = (connection, reason) => {
+  const apiName = (() => {
+    try {
+      const url = new URL(connection.endpointUrl);
+      const segments = url.pathname.split('/').filter(Boolean);
+      const apiIndex = segments.findIndex((segment) => segment.toLowerCase() === 'graphqlapis');
+      return apiIndex >= 0 && segments[apiIndex + 1] ? segments[apiIndex + 1] : 'fabric-graphql';
+    } catch {
+      return 'fabric-graphql';
+    }
+  })();
+
+  return {
+    id: datasetIdForConnection(connection),
+    name: apiName,
+    displayName: `${connection.displayName} (${apiName})`,
+    workspaceId: connection.workspaceId || 'workspace未指定',
+    workspaceName: connection.workspaceId ? `Workspace ${connection.workspaceId}` : connection.displayName,
+    description: reason ? `スキーマ取得に失敗しました: ${reason}` : 'Fabric GraphQL 接続候補です。',
+    tags: ['Fabric', 'GraphQL', '接続確認が必要'],
+    tableCount: 0,
+    lastSyncedAt: connection.lastSuccessAt || connection.updatedAt,
+    connectionStatus: 'warning',
+    recommended: true,
+    recommendationScore: 10,
+    recommendationReasons: ['接続設定は存在しますが、スキーマ取得を確認できませんでした'],
+    recentlyUsed: Boolean(connection.isActive),
+    warningCodes: ['SCHEMA_PREVIEW_UNAVAILABLE']
+  };
+};
+
 const validateDraft = (draft, options = {}) => {
   if (!draft.displayName?.trim()) {
     throw Object.assign(new Error('接続名を入力してください。'), {
@@ -209,25 +253,32 @@ const routes = {
   },
 
   'GET datasets': async (req, context) => {
-    const connection = await getActiveConnection();
-    if (!connection) {
+    const connections = await readyConnections();
+    if (connections.length === 0) {
       json(context, 200, { data: [], pageInfo: { hasNextPage: false, totalCount: 0 } });
       return;
     }
 
-    const { dataset } = await buildDataset(connection, req, makeHash);
+    const settled = await Promise.allSettled(
+      connections.map((connection) => buildDataset(connection, req, makeHash, { includeRowCounts: false }))
+    );
+    const datasets = settled.map((result, index) =>
+      result.status === 'fulfilled'
+        ? result.value.dataset
+        : fallbackDatasetForConnection(connections[index], result.reason?.message || 'unknown error')
+    );
     json(context, 200, {
-      data: [dataset],
+      data: datasets,
       pageInfo: {
         hasNextPage: false,
-        totalCount: 1
+        totalCount: datasets.length
       }
     });
   },
 
   'POST mappings/bootstrap': async (req, context) => {
     const body = readBody(req);
-    const connection = await getActiveConnection();
+    const connection = await connectionForDatasetId(body.datasetId) || await getActiveConnection();
     if (!connection) {
       error(context, 404, 'FABRIC.NO_ACTIVE_CONNECTION', '有効なFabric接続がありません。');
       return;
@@ -438,14 +489,15 @@ module.exports = async function (context, req) {
 
     const datasetPreviewMatch = route.match(/^datasets\/([^/]+)\/preview$/);
     if (req.method.toUpperCase() === 'GET' && datasetPreviewMatch) {
-      const connection = await getActiveConnection();
+      const datasetId = decodeURIComponent(datasetPreviewMatch[1]);
+      const connection = await connectionForDatasetId(datasetId) || await getActiveConnection();
       if (!connection) {
         json(context, 404, null);
         return;
       }
 
       const { preview } = await buildDataset(connection, req, makeHash);
-      if (preview.datasetId !== decodeURIComponent(datasetPreviewMatch[1])) {
+      if (preview.datasetId !== datasetId) {
         json(context, 404, null);
         return;
       }

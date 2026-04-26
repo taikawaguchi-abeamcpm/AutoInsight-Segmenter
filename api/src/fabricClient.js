@@ -1,4 +1,5 @@
 const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
+const FABRIC_GRAPHQL_TIMEOUT_MS = Number(process.env.FABRIC_GRAPHQL_TIMEOUT_MS || 30000);
 const ROW_COUNT_PAGE_SIZE = Number(process.env.FABRIC_ROW_COUNT_PAGE_SIZE || 1000);
 const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 1000);
 const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 1000);
@@ -63,14 +64,32 @@ const getBearerToken = async (connection, req) => {
 
 const executeFabricGraphql = async (connection, req, query, variables) => {
   const token = await getBearerToken(connection, req);
-  const response = await fetch(connection.endpointUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ query, variables })
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FABRIC_GRAPHQL_TIMEOUT_MS);
+  let response;
+
+  try {
+    response = await fetch(connection.endpointUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw Object.assign(new Error('Fabric GraphQL request timed out.'), {
+        status: 504,
+        code: 'FABRIC.GRAPHQL_TIMEOUT'
+      });
+    }
+
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payload = await response.json().catch(async () => ({ raw: await response.text().catch(() => '') }));
   if (!response.ok || payload.errors?.length) {
@@ -479,12 +498,12 @@ const getActiveConnection = async () => {
   return records[0] || null;
 };
 
-const buildDataset = async (connection, req, makeHash) => {
+const buildDataset = async (connection, req, makeHash, options = {}) => {
   const schema = await introspectFabric(connection, req);
   const fields = schema.queryType?.fields || [];
   const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
   const tableFields = fields.filter((field) => isBusinessQueryField(field, objectTypes));
-  const rowCounts = await fetchRowCounts(connection, req, tableFields, objectTypes);
+  const rowCounts = options.includeRowCounts === false ? new Map() : await fetchRowCounts(connection, req, tableFields, objectTypes);
   const apiName = getGraphqlApiName(connection.endpointUrl);
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
   const fabricDataset = buildFabricDatasetFromSchema(connection, schema, makeHash, rowCounts);
