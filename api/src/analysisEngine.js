@@ -73,10 +73,21 @@ const mode = (values) => {
 
 const categoryForTable = (tableName = '') => {
   const name = tableName.toLowerCase();
-  if (/(order|purchase|transaction|sales|invoice|contract)/.test(name)) return 'transaction';
-  if (/(event|log|click|web|visit|activity|engagement)/.test(name)) return 'behavior';
+  if (/(order|purchase|transaction|sales|invoice|contract|deal|opportunity)/.test(name)) return 'transaction';
+  if (/(event|log|click|web|visit|activity|engagement|appointment|task|call|meeting|interaction)/.test(name)) return 'behavior';
   return 'profile';
 };
+
+const categoryForEntityRole = (role, tableName) => {
+  if (role === 'transaction_fact') return 'transaction';
+  if (role === 'event_log') return 'behavior';
+  return categoryForTable(tableName);
+};
+
+const isSequenceMiningFeature = (feature, eventTimeColumnsByTable) =>
+  feature.valueType === 'categorical' &&
+  eventTimeColumnsByTable.has(feature.sourceTableId) &&
+  (feature.entityRole === 'transaction_fact' || feature.entityRole === 'event_log' || feature.category === 'transaction' || feature.category === 'behavior');
 
 const columnIdMap = (dataset) => new Map(dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, { table, column }])));
 
@@ -261,6 +272,7 @@ const failedResult = ({ analysisJobId, runId, mapping, dataset, config, message 
 
 const buildFeatureDescriptors = (mapping, dataset, target, config) => {
   const columns = columnIdMap(dataset);
+  const tableMappingById = new Map((mapping.tableMappings || []).map((table) => [table.tableId, table]));
   const selectedKeys = config?.mode === 'custom' ? new Set(config.selectedFeatureKeys || []) : null;
 
   return mapping.columnMappings
@@ -271,6 +283,7 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
       if (!item) return null;
       const plan = findFeaturePlan(mapping, dataset, target.table.id, item.table.id);
       if (!plan) return null;
+      const tableMapping = tableMappingById.get(item.table.id);
 
       return {
         featureKey: column.featureConfig.featureKey,
@@ -282,7 +295,8 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
         sourceTableDisplayName: item.table.displayName,
         dataType: item.column.dataType,
         valueType: column.featureConfig.valueType || (item.column.dataType === 'integer' || item.column.dataType === 'float' ? 'numeric' : 'categorical'),
-        category: categoryForTable(item.table.name),
+        entityRole: tableMapping?.entityRole,
+        category: categoryForEntityRole(tableMapping?.entityRole, item.table.name),
         aggregation: column.featureConfig.aggregation,
         plan
       };
@@ -378,7 +392,7 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
         const row = rowById.get(rowId);
         if (row) {
           row[feature.featureKey] = aggregated;
-          if (feature.category === 'transaction' && feature.valueType === 'categorical' && featureEventTimeColumnName) {
+          if (isSequenceMiningFeature(feature, eventTimeColumnsByTable)) {
             row.__sequences[feature.featureKey] = orderedValues;
           }
         }
@@ -407,12 +421,12 @@ const matchesCondition = (row, condition) => {
   return false;
 };
 
-const mineSequentialRouteFeatures = ({ rows, features, baselineRate, minGroupCount, maxRoutes = 5 }) => {
+const mineSequentialRouteFeatures = ({ rows, features, baselineRate, minGroupCount, eventTimeColumnsByTable, maxRoutes = 5 }) => {
   const candidates = [];
   const routeLengths = [2, 3];
 
   features
-    .filter((feature) => feature.category === 'transaction' && feature.valueType === 'categorical')
+    .filter((feature) => isSequenceMiningFeature(feature, eventTimeColumnsByTable))
     .forEach((feature) => {
       const groups = new Map();
 
@@ -460,7 +474,7 @@ const mineSequentialRouteFeatures = ({ rows, features, baselineRate, minGroupCou
       row[featureKey] = matchedRowIndexes.has(rowIndex);
     });
 
-    const score = clampScore(candidate.delta * 140 * Math.sqrt(candidate.group.count / rows.length));
+    const score = clampScore(65 + candidate.delta * 120 * Math.sqrt(candidate.group.count / rows.length));
     const label = `黄金ルート: ${candidate.route}`;
 
     return {
@@ -552,7 +566,7 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
   const importances = [];
 
   features.forEach((feature) => {
-    if (feature.category === 'transaction' && feature.valueType === 'categorical' && eventTimeColumnsByTable.has(feature.sourceTableId)) {
+    if (isSequenceMiningFeature(feature, eventTimeColumnsByTable)) {
       return;
     }
 
@@ -585,6 +599,7 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
       features,
       baselineRate,
       minGroupCount,
+      eventTimeColumnsByTable,
       maxRoutes: Math.min(5, config?.patternCount || 5)
     })
   );

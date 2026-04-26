@@ -205,6 +205,14 @@ export const MappingScreen = ({
     const current = mapping.columnMappings.find((item) => item.columnId === column.id) ?? defaultColumnMapping(table, column);
     const role = patch.columnRole ?? current.columnRole;
     const businessName = patch.businessName ?? current.businessName ?? column.displayName;
+    const requestedFeatureConfig = patch.featureConfig ?? current.featureConfig;
+    const requestedValueType = requestedFeatureConfig?.valueType ?? fallbackFeatureValueType(column);
+    const defaultAggregation =
+      requestedValueType === 'numeric'
+        ? column.dataType === 'float' || column.dataType === 'integer'
+          ? 'sum'
+          : 'count'
+        : 'latest';
     const next: ColumnSemanticMapping = {
       ...current,
       ...patch,
@@ -217,12 +225,15 @@ export const MappingScreen = ({
       featureConfig:
         role === 'feature'
           ? {
-              featureKey: current.featureConfig?.featureKey ?? column.name,
-              label: businessName,
+              featureKey: requestedFeatureConfig?.featureKey ?? column.name,
+              label: requestedFeatureConfig?.label ?? businessName,
               dataType: column.dataType,
-              valueType: current.featureConfig?.valueType ?? fallbackFeatureValueType(column),
-              aggregation: current.featureConfig?.aggregation ?? (column.dataType === 'float' || column.dataType === 'integer' ? 'sum' : 'latest'),
-              missingValuePolicy: current.featureConfig?.missingValuePolicy ?? (column.dataType === 'string' ? 'unknown_category' : 'zero_fill'),
+              valueType: requestedValueType,
+              aggregation:
+                requestedValueType === 'categorical'
+                  ? ['sum', 'avg', 'min', 'max'].includes(requestedFeatureConfig?.aggregation ?? '') ? 'latest' : requestedFeatureConfig?.aggregation ?? defaultAggregation
+                  : requestedFeatureConfig?.aggregation ?? defaultAggregation,
+              missingValuePolicy: requestedFeatureConfig?.missingValuePolicy ?? (column.dataType === 'string' ? 'unknown_category' : 'zero_fill'),
               enabled: true
             }
           : undefined,
@@ -535,7 +546,8 @@ export const MappingScreen = ({
                           upsertColumnMapping(selectedColumnTable, selectedColumn, {
                             featureConfig: {
                               ...selectedColumnMapping.featureConfig!,
-                              valueType: event.target.value as 'categorical' | 'numeric'
+                              valueType: event.target.value as 'categorical' | 'numeric',
+                              aggregation: event.target.value === 'categorical' ? 'latest' : selectedColumn.dataType === 'integer' || selectedColumn.dataType === 'float' ? 'sum' : 'count'
                             }
                           })
                         }
