@@ -1,7 +1,7 @@
 import { apiRequest, delay, type RequestOptions } from '../client';
 import { buildDefaultMapping, mockFabricDataset, nowIso } from '../mockData';
 import type { SelectedDatasetContext } from '../../types/dataset';
-import type { FabricColumn, FabricDataset, FabricTable, SemanticMappingDocument } from '../../types/mapping';
+import type { ColumnSemanticMapping, FabricColumn, FabricDataset, FabricTable, SemanticMappingDocument } from '../../types/mapping';
 
 export interface MappingBootstrap {
   dataset: FabricDataset;
@@ -21,6 +21,45 @@ const normalizeTable = (table: FabricTable): FabricTable => ({
   columns: table.columns.filter(isBusinessColumn)
 });
 
+const featureConfigForColumn = (table: FabricTable, column: FabricColumn) => ({
+  featureKey: column.name,
+  label: column.displayName,
+  dataType: column.dataType,
+  aggregation: column.dataType === 'float' || column.dataType === 'integer' ? 'sum' as const : 'latest' as const,
+  missingValuePolicy: column.dataType === 'string' ? 'unknown_category' as const : 'zero_fill' as const,
+  enabled: true
+});
+
+const normalizeSinglePeriodColumn = (dataset: FabricDataset, columns: ColumnSemanticMapping[]): ColumnSemanticMapping[] => {
+  let assigned = false;
+  const columnById = new Map(
+    dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, { table, column }] as const))
+  );
+
+  return columns.map((mapping) => {
+    if (mapping.columnRole !== 'event_time') {
+      return mapping;
+    }
+
+    if (!assigned) {
+      assigned = true;
+      return {
+        ...mapping,
+        featureConfig: undefined,
+        targetConfig: undefined
+      };
+    }
+
+    const item = columnById.get(mapping.columnId);
+    return {
+      ...mapping,
+      columnRole: 'feature',
+      targetConfig: undefined,
+      featureConfig: mapping.featureConfig ?? (item ? featureConfigForColumn(item.table, item.column) : undefined)
+    };
+  });
+};
+
 const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBootstrap => {
   const normalizedDataset = {
     ...dataset,
@@ -34,12 +73,12 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
     mapping: {
       ...mapping,
       tableMappings: mapping.tableMappings.filter((table) => tableIds.has(table.tableId)),
-      columnMappings: mapping.columnMappings
+      columnMappings: normalizeSinglePeriodColumn(normalizedDataset, mapping.columnMappings
         .filter((column) => columnIds.has(column.columnId))
         .map((column) => ({
           ...column,
           columnRole: VALID_COLUMN_ROLES.has(column.columnRole) ? column.columnRole : 'feature'
-        })),
+        }))),
       joinDefinitions: mapping.joinDefinitions.filter(
         (join) =>
           tableIds.has(join.fromTableId) &&
@@ -138,6 +177,8 @@ export const mappingApi = {
     const targetMappings = mapping.columnMappings.filter((column) => column.columnRole === 'target');
     const targetCount = targetMappings.length;
     const targetMapping = targetMappings[0];
+    const periodColumnMapping = mapping.columnMappings.find((column) => column.columnRole === 'event_time');
+    const periodColumnCount = mapping.columnMappings.filter((column) => column.columnRole === 'event_time').length;
     const enabledFeatureMappings = mapping.columnMappings.filter((column) => column.columnRole === 'feature' && column.featureConfig?.enabled);
     const customerMasterCount = mapping.tableMappings.filter((table) => table.entityRole === 'customer_master').length;
     const issues = mapping.validationIssues.filter((issue) => issue.severity !== 'error');
@@ -160,6 +201,28 @@ export const mappingApi = {
         severity: 'error',
         code: 'MULTIPLE_CUSTOMER_MASTERS',
         message: '顧客の主軸テーブルは 1 件だけ選択してください。',
+        blocking: true
+      });
+    }
+
+    if (periodColumnCount !== 1) {
+      issues.push({
+        id: 'analysis-period-column-count',
+        scope: 'mapping',
+        severity: 'error',
+        code: periodColumnCount === 0 ? 'MISSING_ANALYSIS_PERIOD_COLUMN' : 'MULTIPLE_ANALYSIS_PERIOD_COLUMNS',
+        message: '分析期間に使う日付/日時の列は 1 件だけ選択してください。',
+        blocking: true
+      });
+    }
+
+    if (targetMapping && periodColumnMapping && targetMapping.tableId !== periodColumnMapping.tableId) {
+      issues.push({
+        id: 'analysis-period-column-table',
+        scope: 'mapping',
+        severity: 'error',
+        code: 'ANALYSIS_PERIOD_COLUMN_TABLE_MISMATCH',
+        message: '分析期間に使う日付/日時の列は、目的変数と同じテーブルから選択してください。',
         blocking: true
       });
     }

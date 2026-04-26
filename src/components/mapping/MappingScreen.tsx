@@ -28,7 +28,7 @@ const entityLabels: Record<SemanticEntityRole, string> = {
 
 const columnLabels: Record<SemanticColumnRole, string> = {
   customer_id: '顧客ID',
-  event_time: '日時',
+  event_time: '分析期間に使う日付/日時',
   target: '目的変数',
   feature: '特徴量',
   excluded: '分析対象外'
@@ -85,6 +85,21 @@ const defaultColumnMapping = (table: FabricTable, column: FabricColumn, role = f
       : undefined,
   targetConfig: role === 'target' ? { targetKey: column.name, label: column.displayName } : undefined
 });
+
+const asFeatureMapping = (
+  mapping: ColumnSemanticMapping,
+  columnById: Map<string, { table: FabricTable; column: FabricColumn }>
+): ColumnSemanticMapping => {
+  const item = columnById.get(mapping.columnId);
+  const fallbackFeatureConfig = item ? defaultColumnMapping(item.table, item.column, 'feature').featureConfig : undefined;
+
+  return {
+    ...mapping,
+    columnRole: 'feature',
+    targetConfig: undefined,
+    featureConfig: mapping.featureConfig ?? fallbackFeatureConfig
+  };
+};
 
 export const MappingScreen = ({
   datasetContext,
@@ -220,11 +235,21 @@ export const MappingScreen = ({
     };
 
     const withoutCurrent = mapping.columnMappings.filter((item) => item.columnId !== column.id);
-    const withoutOtherTargets = role === 'target' ? withoutCurrent.map((item) => (item.columnRole === 'target' ? { ...item, columnRole: 'feature' as const, targetConfig: undefined } : item)) : withoutCurrent;
+    const withoutConflictingRoles = withoutCurrent.map((item) => {
+      if (role === 'target' && item.columnRole === 'target') {
+        return asFeatureMapping(item, columnById);
+      }
+
+      if (role === 'event_time' && item.columnRole === 'event_time') {
+        return asFeatureMapping(item, columnById);
+      }
+
+      return item;
+    });
 
     setMapping({
       ...mapping,
-      columnMappings: [...withoutOtherTargets, next],
+      columnMappings: [...withoutConflictingRoles, next],
       updatedAt: new Date().toISOString()
     });
   };

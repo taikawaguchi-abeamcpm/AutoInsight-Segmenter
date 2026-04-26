@@ -14,6 +14,33 @@ const toNumber = (value) => {
   return undefined;
 };
 
+const toTimestamp = (value) => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
+};
+
+const dateStart = (date) => (date ? Date.parse(`${date}T00:00:00.000Z`) : undefined);
+const dateEndExclusive = (date) => {
+  if (!date) return undefined;
+  const start = dateStart(date);
+  return Number.isNaN(start) ? undefined : start + 24 * 60 * 60 * 1000;
+};
+
+const inDateRange = (value, startDate, endDate) => {
+  const timestamp = toTimestamp(value);
+  if (timestamp === undefined) return false;
+  const start = dateStart(startDate);
+  const end = dateEndExclusive(endDate);
+  if (start !== undefined && !Number.isNaN(start) && timestamp < start) return false;
+  if (end !== undefined && !Number.isNaN(end) && timestamp >= end) return false;
+  return true;
+};
+
 const normalizeBool = (value, targetConfig = {}) => {
   if (isMissing(value)) return undefined;
   if (targetConfig.positiveValue !== undefined && String(value) === String(targetConfig.positiveValue)) return 1;
@@ -109,15 +136,22 @@ const findFeaturePlan = (mapping, dataset, targetTableId, featureTableId) => {
 };
 
 const aggregateValues = (values, feature) => {
-  const present = values.filter((value) => !isMissing(value));
+  const present = values
+    .map((item) => (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'value') ? item : { value: item }))
+    .filter((item) => !isMissing(item.value))
+    .sort((left, right) => {
+      if (left.at === undefined || right.at === undefined) return 0;
+      return left.at - right.at;
+    });
   if (present.length === 0) return undefined;
 
   const aggregation = feature.aggregation || 'latest';
-  const numericValues = present.map(toNumber).filter((value) => value !== undefined);
+  const rawValues = present.map((item) => item.value);
+  const numericValues = rawValues.map(toNumber).filter((value) => value !== undefined);
   const numericFeature = feature.dataType === 'integer' || feature.dataType === 'float';
 
   if (aggregation === 'count') return present.length;
-  if (aggregation === 'distinct_count') return new Set(present.map(String)).size;
+  if (aggregation === 'distinct_count') return new Set(rawValues.map(String)).size;
   if (numericFeature) {
     if (aggregation === 'sum') return numericValues.reduce((sum, value) => sum + value, 0);
     if (aggregation === 'avg') return mean(numericValues);
@@ -126,7 +160,7 @@ const aggregateValues = (values, feature) => {
     return numericValues[numericValues.length - 1];
   }
 
-  return aggregation === 'latest' || aggregation === 'none' ? present[present.length - 1] : mode(present);
+  return aggregation === 'latest' || aggregation === 'none' ? rawValues[rawValues.length - 1] : mode(rawValues);
 };
 
 const analyzeNumericFeature = ({ rows, feature, baselineRate, minGroupCount }) => {
@@ -266,14 +300,24 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
     .filter(Boolean);
 };
 
-const materializeAnalysisRows = async ({ connection, req, dataset, target, targetMapping, features }) => {
+const resolveAnalysisPeriodColumn = (mapping, dataset, targetMapping) => {
+  const columns = columnIdMap(dataset);
+  const periodMapping = (mapping.columnMappings || []).find((column) => column.columnRole === 'event_time');
+  const periodColumnId = periodMapping?.columnId || targetMapping?.targetConfig?.eventTimeColumnId;
+  const item = periodColumnId ? columns.get(periodColumnId) : null;
+  return item ? { ...item, mapping: periodMapping } : null;
+};
+
+const materializeAnalysisRows = async ({ connection, req, dataset, target, targetMapping, features, config, periodColumn }) => {
   const columns = columnIdMap(dataset);
   const targetKeyColumnIds = features.map((feature) => feature.plan.targetKeyColumnId).filter(Boolean);
   const sameTableColumns = features.filter((feature) => feature.plan.kind === 'same').map((feature) => feature.sourceColumnName);
   const targetKeyColumns = targetKeyColumnIds.map((columnId) => columns.get(columnId)?.column.name).filter(Boolean);
-  const targetFetchColumns = [target.column.name, ...targetKeyColumns, ...sameTableColumns];
+  const targetPeriodColumnName = periodColumn?.table.id === target.table.id ? periodColumn.column.name : undefined;
+  const targetFetchColumns = [target.column.name, targetPeriodColumnName, ...targetKeyColumns, ...sameTableColumns];
   const { rows: rawTargetRows, truncated } = await fetchTableRows(connection, req, target.table.name, targetFetchColumns);
   const rows = rawTargetRows
+    .filter((row) => !targetPeriodColumnName || inDateRange(row[targetPeriodColumnName], config?.evaluationStartDate, config?.evaluationEndDate))
     .map((row, index) => ({
       __rowId: index,
       __target: normalizeBool(row[target.column.name], targetMapping.targetConfig),
@@ -307,17 +351,24 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
     });
     if (targetRowsByKey.size === 0) continue;
 
+    const featurePeriodColumnName = periodColumn?.table.id === feature.sourceTableId ? periodColumn.column.name : undefined;
     const { rows: featureRows } = await fetchTableRows(connection, req, feature.sourceTableName, [
       featureKeyName,
-      feature.sourceColumnName
+      feature.sourceColumnName,
+      featurePeriodColumnName
     ]);
     const featureValuesByKey = new Map();
-    featureRows.forEach((featureRow) => {
+    featureRows
+      .filter((featureRow) => !featurePeriodColumnName || inDateRange(featureRow[featurePeriodColumnName], config?.observationStartDate, config?.observationEndDate))
+      .forEach((featureRow) => {
       const key = featureRow[featureKeyName];
       if (isMissing(key)) return;
       const textKey = String(key);
       const bucket = featureValuesByKey.get(textKey) || [];
-      bucket.push(featureRow[feature.sourceColumnName]);
+      bucket.push({
+        value: featureRow[feature.sourceColumnName],
+        at: featurePeriodColumnName ? toTimestamp(featureRow[featurePeriodColumnName]) : undefined
+      });
       featureValuesByKey.set(textKey, bucket);
     });
 
@@ -375,7 +426,15 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
     return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析可能な特徴量がありません。目的変数テーブルと同一テーブル、またはjoin定義で接続できる特徴量を選択してください。' });
   }
 
-  const { rows, truncated } = await materializeAnalysisRows({ connection, req, dataset, target, targetMapping, features });
+  const periodColumn = resolveAnalysisPeriodColumn(mapping, dataset, targetMapping);
+  if (config?.mode === 'custom' && !periodColumn) {
+    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析期間に使う日付/日時の列が見つからないため、期間指定を使った分析を開始できませんでした。' });
+  }
+  if (config?.mode === 'custom' && periodColumn.table.id !== target.table.id) {
+    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析期間に使う日付/日時の列は、目的変数と同じテーブルから選択してください。評価期間の判定に使えませんでした。' });
+  }
+
+  const { rows, truncated } = await materializeAnalysisRows({ connection, req, dataset, target, targetMapping, features, config, periodColumn });
   if (rows.length === 0) {
     return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '目的変数を二値として判定できる行がありませんでした。目的変数の役割または正例/負例の値を確認してください。' });
   }
