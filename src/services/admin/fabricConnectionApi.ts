@@ -128,7 +128,7 @@ export const fabricConnectionApi = {
       body: JSON.stringify(draft)
     });
     if (response) {
-      savedConnections = [response, ...savedConnections.filter((connection) => connection.id !== response.id).map((connection) => ({ ...connection, isActive: false }))];
+      savedConnections = [response, ...savedConnections.filter((connection) => connection.id !== response.id)];
       writeConnections(savedConnections);
       return response;
     }
@@ -157,7 +157,7 @@ export const fabricConnectionApi = {
       updatedBy: 'admin@example.com'
     };
 
-    savedConnections = [next, ...savedConnections.filter((connection) => connection.id !== id).map((connection) => ({ ...connection, isActive: false }))];
+    savedConnections = [next, ...savedConnections.filter((connection) => connection.id !== id)];
     writeConnections(savedConnections);
     return next;
   },

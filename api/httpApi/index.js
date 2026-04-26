@@ -253,12 +253,6 @@ const routes = {
     const rawExisting = await findExistingConnectionForDraft(draft);
     validateDraft(draft, { requireSecret: draft.authMode === 'service_principal' && !rawExisting?.clientSecret });
 
-    await Promise.all(
-      current
-        .filter((connection) => connection.id !== id && connection.isActive)
-        .map((connection) => upsert('fabricConnections', { ...connection, isActive: false, partitionKey: connection.tenantId || 'default' }))
-    );
-
     const saved = await upsert('fabricConnections', {
       id,
       partitionKey: draft.tenantId.trim(),
@@ -353,12 +347,13 @@ const routes = {
     const runId = `run-${makeHash({ mappingDocumentId, config })}`;
     const analysisJobId = `job-${makeHash({ runId, now })}`;
     const estimatedDurationSeconds = config?.mode === 'autopilot' ? 600 : 240;
-    const activeConnection = await getActiveConnection();
-    if (!activeConnection) {
+    const datasetId = dataset?.id || mapping?.datasetId;
+    const analysisConnection = await resolveConnectionForDataset(datasetId);
+    if (!analysisConnection) {
       error(context, 400, 'FABRIC.NO_ACTIVE_CONNECTION', '実データ分析には有効なFabric接続が必要です。');
       return;
     }
-    const resolvedDataset = dataset || (activeConnection ? (await buildDataset(activeConnection, req, makeHash)).fabricDataset : null);
+    const resolvedDataset = dataset || (await buildDataset(analysisConnection, req, makeHash)).fabricDataset;
     const resolvedMapping = mapping || null;
     if (!resolvedDataset || !resolvedMapping) {
       error(context, 400, 'ANALYSIS.INPUT_REQUIRED', '実データ分析にはdatasetとmappingが必要です。');
@@ -381,7 +376,7 @@ const routes = {
       updatedAt: now
     });
 
-    const analysisResult = await buildRealAnalysisResult({ connection: activeConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+    const analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
     await upsert('analysisResults', {
       ...analysisResult,
       id: analysisResult.analysisJobId,
@@ -491,11 +486,6 @@ module.exports = async function (context, req) {
       if (!deleted) {
         error(context, 404, 'CONNECTION.NOT_FOUND', '削除対象の接続設定が見つかりません。');
         return;
-      }
-
-      const remaining = await listConnections();
-      if (remaining.length > 0 && !remaining.some((connection) => connection.isActive)) {
-        await upsert('fabricConnections', { ...remaining[0], isActive: true, partitionKey: remaining[0].tenantId || 'default' });
       }
 
       json(context, 200, await listConnections());

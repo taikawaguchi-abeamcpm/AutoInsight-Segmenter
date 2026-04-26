@@ -125,7 +125,7 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
     setMessage(null);
     try {
       const saved = await fabricConnectionApi.save({ ...draft, id: selectedConnection?.id });
-      setConnections((current) => [saved, ...current.filter((connection) => connection.id !== saved.id).map((connection) => ({ ...connection, isActive: false }))]);
+      setConnections((current) => [saved, ...current.filter((connection) => connection.id !== saved.id)]);
       setSelectedConnectionId(saved.id);
       setDraft((current) => ({ ...current, clientSecret: '' }));
       setMessage('接続設定を保存し、有効な接続として設定しました。');
