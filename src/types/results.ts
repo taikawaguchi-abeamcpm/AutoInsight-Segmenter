@@ -17,6 +17,7 @@ export interface AnalysisResultDocument {
   interactionPairs: FeatureInteractionResult[];
   goldenPatterns: GoldenPatternResult[];
   segmentRecommendations: SegmentRecommendation[];
+  modelMetadata?: AnalysisModelMetadata;
 }
 
 export interface AnalysisResultSummary {
@@ -78,6 +79,14 @@ export interface SegmentRecommendation {
   conditions: PatternCondition[];
   useCase?: string;
   priorityScore: number;
+}
+
+export interface AnalysisModelMetadata {
+  modelType: string;
+  modelVersion: string;
+  trainingRowCount: number;
+  trainingFeatureCount: number;
+  logLoss?: number;
 }
 
 export interface SelectedSegmentContext {

@@ -23,3 +23,16 @@ for (const file of files) {
     process.exit(result.status);
   }
 }
+
+const pythonFiles = [
+  join(__dirname, '..', '..', 'analysis-worker', 'run_analysis.py'),
+  join(__dirname, '..', '..', 'analysis-worker', 'autoinsight_analysis', 'worker.py')
+];
+const pythonResult = spawnSync('python', ['-m', 'py_compile', ...pythonFiles], { stdio: 'inherit' });
+if (pythonResult.error) {
+  console.error(pythonResult.error.message);
+  process.exit(1);
+}
+if (pythonResult.status !== 0) {
+  process.exit(pythonResult.status);
+}

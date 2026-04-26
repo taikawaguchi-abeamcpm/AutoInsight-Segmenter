@@ -469,11 +469,11 @@ const routes = {
       return;
     }
 
-    await upsert('analysisRuns', {
+    const analysisRun = {
       id: analysisJobId,
       tenantId: 'default',
       partitionKey: 'default',
-      datasetId: 'unknown',
+      datasetId: resolvedDataset.id,
       mappingDocumentId,
       mode: config?.mode || 'custom',
       config,
@@ -483,7 +483,9 @@ const routes = {
       createdAt: now,
       createdBy: actor,
       updatedAt: now
-    });
+    };
+
+    await upsert('analysisRuns', analysisRun);
 
     const analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
     await upsert('analysisResults', {
@@ -492,6 +494,14 @@ const routes = {
       jobId: analysisResult.analysisJobId,
       partitionKey: analysisResult.analysisJobId,
       updatedAt: now
+    });
+    await upsert('analysisRuns', {
+      ...analysisRun,
+      status: analysisResult?.status || 'failed',
+      modelVersion: analysisResult?.modelMetadata?.modelVersion,
+      featureGenerationVersion: 'python-worker-v1',
+      updatedAt: now,
+      completedAt: analysisResult?.completedAt
     });
 
     json(context, 200, {
