@@ -16,6 +16,41 @@ const getGraphqlApiName = (endpointUrl) => {
   }
 };
 
+const resolveStoredClientSecret = async (connection) => {
+  if (connection.clientSecret) {
+    return connection.clientSecret;
+  }
+
+  if (!connection.id && !connection.endpointUrl) {
+    return undefined;
+  }
+
+  try {
+    const { queryAll } = require('./cosmosStore');
+    const records = connection.id
+      ? await queryAll('fabricConnections', {
+          query: 'SELECT * FROM c WHERE c.id = @id',
+          parameters: [{ name: '@id', value: connection.id }]
+        })
+      : [];
+    const matchedById = records.find((record) => record.clientSecret);
+    if (matchedById?.clientSecret) {
+      return matchedById.clientSecret;
+    }
+
+    const matches = await queryAll('fabricConnections', {
+      query: 'SELECT * FROM c WHERE c.endpointUrl = @endpointUrl AND c.tenantId = @tenantId',
+      parameters: [
+        { name: '@endpointUrl', value: connection.endpointUrl },
+        { name: '@tenantId', value: connection.tenantId }
+      ]
+    });
+    return matches.find((record) => record.clientSecret)?.clientSecret;
+  } catch {
+    return undefined;
+  }
+};
+
 const getBearerToken = async (connection, req) => {
   const authorization = req.headers?.authorization || req.headers?.Authorization;
   if (connection.authMode === 'obo') {
@@ -30,7 +65,8 @@ const getBearerToken = async (connection, req) => {
     return token;
   }
 
-  if (!connection.clientSecret) {
+  const clientSecret = await resolveStoredClientSecret(connection);
+  if (!clientSecret) {
     throw Object.assign(new Error('Service principal方式ではClient Secretがサーバー側に保存されている必要があります。'), {
       status: 400,
       code: 'FABRIC.SECRET_NOT_CONFIGURED'
@@ -40,7 +76,7 @@ const getBearerToken = async (connection, req) => {
   const tokenEndpoint = `https://login.microsoftonline.com/${encodeURIComponent(connection.tenantId)}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
     client_id: connection.clientId,
-    client_secret: connection.clientSecret,
+    client_secret: clientSecret,
     grant_type: 'client_credentials',
     scope: FABRIC_SCOPE
   });
