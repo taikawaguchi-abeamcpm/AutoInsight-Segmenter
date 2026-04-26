@@ -46,7 +46,12 @@ export const DatasetSelectionScreen = ({
     try {
       const response = await datasetApi.listDatasets({ signal });
       setDatasets(response.data);
-      setSelectedId(response.data.find((dataset) => dataset.recommended && dataset.connectionStatus !== 'forbidden')?.id ?? response.data[0]?.id ?? null);
+      setSelectedId(
+        response.data.find((dataset) => dataset.recommended && dataset.connectionStatus === 'ready')?.id ??
+          response.data.find((dataset) => dataset.connectionStatus === 'ready')?.id ??
+          response.data[0]?.id ??
+          null
+      );
     } catch (error) {
       if (!isAbortError(error)) {
         setDatasets([]);
@@ -74,10 +79,10 @@ export const DatasetSelectionScreen = ({
       return;
     }
 
-    if (selected.connectionStatus === 'forbidden' || selected.connectionStatus === 'error') {
+    if (selected.connectionStatus !== 'ready') {
       setPreview(null);
       setPreviewApiError(null);
-      setPreviewError('このデータセットはプレビュー権限または接続状態に問題があります。');
+      setPreviewError('このデータセットは接続確認が完了していないため使用できません。Fabric接続設定を確認してください。');
       return;
     }
 
@@ -132,7 +137,7 @@ export const DatasetSelectionScreen = ({
       .sort((left, right) => (right.recommendationScore ?? 0) - (left.recommendationScore ?? 0));
   }, [datasets, listMode, searchQuery, statusFilter]);
 
-  const canSubmit = selected?.connectionStatus === 'ready' || selected?.connectionStatus === 'warning';
+  const canSubmit = selected?.connectionStatus === 'ready';
 
   const submit = async () => {
     if (!selected || !canSubmit) {
@@ -254,6 +259,15 @@ export const DatasetSelectionScreen = ({
               </section>
               <section className="detail-section">
                 <h3>主要テーブル</h3>
+                {selected.connectionStatus !== 'ready' ? (
+                  <div className="notice warning">
+                    <span>
+                      この接続はスキーマ確認が完了していないため次へ進めません。
+                      {selected.connectionId ? ` 接続ID: ${selected.connectionId}` : ''}
+                      {selected.secretConfigured === false ? ' Client Secret が未登録です。' : ''}
+                    </span>
+                  </div>
+                ) : null}
                 {previewError ? (
                   <div className="notice danger">
                     <span>

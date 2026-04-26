@@ -539,7 +539,11 @@ const buildDataset = async (connection, req, makeHash, options = {}) => {
   const fields = schema.queryType?.fields || [];
   const objectTypes = new Map((schema.types || []).filter((type) => type.kind === 'OBJECT').map((type) => [type.name, type]));
   const tableFields = fields.filter((field) => isBusinessQueryField(field, objectTypes));
-  const rowCounts = options.includeRowCounts === false ? new Map() : await fetchRowCounts(connection, req, tableFields, objectTypes);
+  const rowCounts = options.includeRowCounts === false
+    ? new Map()
+    : options.rowCountMode === 'totalOnly'
+      ? await fetchTotalCountHints(connection, req, tableFields, objectTypes)
+      : await fetchRowCounts(connection, req, tableFields, objectTypes);
   const apiName = getGraphqlApiName(connection.endpointUrl);
   const datasetId = `fabric-${makeHash({ endpointUrl: connection.endpointUrl, workspaceId: connection.workspaceId, tenantId: connection.tenantId })}`;
   const fabricDataset = buildFabricDatasetFromSchema(connection, schema, makeHash, rowCounts);
@@ -553,6 +557,8 @@ const buildDataset = async (connection, req, makeHash, options = {}) => {
     fabricDataset,
     dataset: {
       id: datasetId,
+      connectionId: connection.id,
+      secretConfigured: Boolean(connection.clientSecret || connection.secretConfigured),
       name: apiName,
       displayName: `${connection.displayName} (${apiName})`,
       workspaceId: connection.workspaceId || 'workspace未指定',

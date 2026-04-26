@@ -5,7 +5,8 @@ export type DatasetWarningCode =
   | 'NO_TIMESTAMP_COLUMN'
   | 'LOW_TABLE_COUNT'
   | 'SYNC_DELAYED'
-  | 'ACCESS_LIMITED';
+  | 'ACCESS_LIMITED'
+  | 'SCHEMA_PREVIEW_UNAVAILABLE';
 
 export type DatasetSelectionStatus =
   | 'idle'
@@ -24,6 +25,8 @@ export interface FabricWorkspaceSummary {
 
 export interface DatasetListItem {
   id: string;
+  connectionId?: string;
+  secretConfigured?: boolean;
   name: string;
   displayName: string;
   workspaceId: string;

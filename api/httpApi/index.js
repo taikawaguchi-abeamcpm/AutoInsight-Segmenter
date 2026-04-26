@@ -69,6 +69,8 @@ const fallbackDatasetForConnection = (connection, reason) => {
 
   return {
     id: datasetIdForConnection(connection),
+    connectionId: connection.id,
+    secretConfigured: Boolean(connection.clientSecret || connection.secretConfigured),
     name: apiName,
     displayName: `${connection.displayName} (${apiName})`,
     workspaceId: connection.workspaceId || 'workspace未指定',
@@ -114,6 +116,14 @@ const validateDraft = (draft, options = {}) => {
       code: 'VALIDATION.SECRET_REQUIRED'
     });
   }
+};
+
+const resolveConnectionForDataset = async (datasetId) => {
+  if (!datasetId) {
+    return getActiveConnection();
+  }
+
+  return connectionForDatasetId(datasetId);
 };
 
 const listConnections = async () => {
@@ -278,13 +288,13 @@ const routes = {
 
   'POST mappings/bootstrap': async (req, context) => {
     const body = readBody(req);
-    const connection = await connectionForDatasetId(body.datasetId) || await getActiveConnection();
+    const connection = await resolveConnectionForDataset(body.datasetId);
     if (!connection) {
       error(context, 404, 'FABRIC.NO_ACTIVE_CONNECTION', '有効なFabric接続がありません。');
       return;
     }
 
-    const { fabricDataset } = await buildDataset(connection, req, makeHash);
+    const { fabricDataset } = await buildDataset(connection, req, makeHash, { rowCountMode: 'totalOnly' });
     const dataset = { ...fabricDataset, id: body.datasetId || fabricDataset.id, displayName: body.datasetName || fabricDataset.displayName };
     const { queryAll } = getStore();
     const existing = (await queryAll('semanticMappings', {
@@ -490,13 +500,13 @@ module.exports = async function (context, req) {
     const datasetPreviewMatch = route.match(/^datasets\/([^/]+)\/preview$/);
     if (req.method.toUpperCase() === 'GET' && datasetPreviewMatch) {
       const datasetId = decodeURIComponent(datasetPreviewMatch[1]);
-      const connection = await connectionForDatasetId(datasetId) || await getActiveConnection();
+      const connection = await resolveConnectionForDataset(datasetId);
       if (!connection) {
         json(context, 404, null);
         return;
       }
 
-      const { preview } = await buildDataset(connection, req, makeHash);
+      const { preview } = await buildDataset(connection, req, makeHash, { rowCountMode: 'totalOnly' });
       if (preview.datasetId !== datasetId) {
         json(context, 404, null);
         return;
