@@ -51,6 +51,43 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
   };
 };
 
+const hasFeaturePath = (mapping: SemanticMappingDocument, targetTableId: string, featureTableId: string) => {
+  if (targetTableId === featureTableId) {
+    return true;
+  }
+
+  const edges = mapping.joinDefinitions
+    .filter((join) => join.fromColumnIds.length > 0 && join.toColumnIds.length > 0)
+    .flatMap((join) => [
+      [join.fromTableId, join.toTableId],
+      [join.toTableId, join.fromTableId]
+    ]);
+  const visited = new Set<string>([targetTableId]);
+  const queue = [targetTableId];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+
+    for (const [from, to] of edges) {
+      if (from !== current || visited.has(to)) {
+        continue;
+      }
+
+      if (to === featureTableId) {
+        return true;
+      }
+
+      visited.add(to);
+      queue.push(to);
+    }
+  }
+
+  return false;
+};
+
 export const mappingApi = {
   async bootstrap(context: SelectedDatasetContext, options: RequestOptions = {}): Promise<MappingBootstrap> {
     const response = await apiRequest<MappingBootstrap>('/mappings/bootstrap', {
@@ -98,7 +135,10 @@ export const mappingApi = {
 
   async validate(mapping: SemanticMappingDocument, options: RequestOptions = {}): Promise<SemanticMappingDocument> {
     await delay(160, options.signal);
-    const targetCount = mapping.columnMappings.filter((column) => column.columnRole === 'target').length;
+    const targetMappings = mapping.columnMappings.filter((column) => column.columnRole === 'target');
+    const targetCount = targetMappings.length;
+    const targetMapping = targetMappings[0];
+    const enabledFeatureMappings = mapping.columnMappings.filter((column) => column.columnRole === 'feature' && column.featureConfig?.enabled);
     const customerMasterCount = mapping.tableMappings.filter((table) => table.entityRole === 'customer_master').length;
     const issues = mapping.validationIssues.filter((issue) => issue.severity !== 'error');
 
@@ -113,15 +153,32 @@ export const mappingApi = {
       });
     }
 
-    if (customerMasterCount !== 1) {
+    if (customerMasterCount > 1) {
       issues.push({
         id: 'customer-master-count',
         scope: 'mapping',
         severity: 'error',
-        code: 'MISSING_CUSTOMER_MASTER',
-        message: '顧客の主軸テーブルを 1 件選択してください。',
+        code: 'MULTIPLE_CUSTOMER_MASTERS',
+        message: '顧客の主軸テーブルは 1 件だけ選択してください。',
         blocking: true
       });
+    }
+
+    if (targetMapping && enabledFeatureMappings.length > 0) {
+      const disconnectedFeature = enabledFeatureMappings.find(
+        (feature) => !hasFeaturePath(mapping, targetMapping.tableId, feature.tableId)
+      );
+
+      if (disconnectedFeature) {
+        issues.push({
+          id: 'feature-join-path',
+          scope: 'mapping',
+          severity: 'error',
+          code: 'FEATURE_TABLE_NOT_CONNECTED',
+          message: '目的変数テーブルと特徴量テーブルを同じテーブルにするか、結合条件で接続してください。',
+          blocking: true
+        });
+      }
     }
 
     return {

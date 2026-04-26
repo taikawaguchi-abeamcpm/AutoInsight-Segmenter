@@ -91,7 +91,7 @@ export const analysisApi = {
       });
     }
 
-    if (summary.dataQuality.eligibleRowCount > 0 && summary.dataQuality.eligibleRowCount < 100) {
+    if (typeof summary.dataQuality.eligibleRowCount === 'number' && summary.dataQuality.eligibleRowCount > 0 && summary.dataQuality.eligibleRowCount < 100) {
       issues.push({
         id: 'insufficient-row-count',
         scope: 'analysis' as const,

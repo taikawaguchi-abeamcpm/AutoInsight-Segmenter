@@ -1040,6 +1040,12 @@ textarea {
   width: 100%;
 }
 
+.mapping-validation-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
 .admin-action-bar {
   left: calc(260px + 28px + var(--admin-list-width) + var(--admin-grid-gap));
 }

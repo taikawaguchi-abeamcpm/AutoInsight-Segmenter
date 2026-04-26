@@ -41,7 +41,7 @@ export interface AnalysisFeatureSummary {
 }
 
 export interface AnalysisDataQualitySummary {
-  eligibleRowCount: number;
+  eligibleRowCount?: number;
   duplicateRate: number;
   averageMissingRate: number;
   invalidFeatureCount: number;

@@ -149,6 +149,7 @@ const buildAnalysisSummary = (mapping, dataset) => {
   const targetMapping = mapping.columnMappings.find((column) => column.columnRole === 'target') || mapping.columnMappings.find((column) => column.targetConfig);
   const customerTableMapping = mapping.tableMappings.find((table) => table.entityRole === 'customer_master') || mapping.tableMappings[0];
   const customerTable = tableById.get(customerTableMapping?.tableId);
+  const eligibleRowCount = typeof customerTable?.rowCount === 'number' ? Math.max(customerTable.rowCount, 0) : undefined;
   const features = mapping.columnMappings
     .filter((column) => column.columnRole === 'feature' && column.featureConfig?.enabled)
     .map((column) => {
@@ -185,7 +186,7 @@ const buildAnalysisSummary = (mapping, dataset) => {
     features,
     relatedTables: dataset.tables.map((table) => table.displayName),
     dataQuality: {
-      eligibleRowCount: Math.max(customerTable?.rowCount || 0, 0),
+      eligibleRowCount,
       duplicateRate: 0,
       averageMissingRate: 0,
       invalidFeatureCount: 0,

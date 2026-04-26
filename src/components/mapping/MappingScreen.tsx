@@ -328,6 +328,7 @@ export const MappingScreen = ({
 
   const targetMapping = mapping?.columnMappings.find((column) => column.columnRole === 'target') ?? null;
   const featureMappings = mapping?.columnMappings.filter((column) => column.columnRole === 'feature') ?? [];
+  const validationIssues = mapping?.validationIssues ?? [];
   const warningCount = mapping?.validationIssues.filter((issue) => issue.severity === 'warning').length ?? 0;
   const errorCount = mapping?.validationIssues.filter((issue) => issue.severity === 'error').length ?? 0;
 
@@ -628,6 +629,16 @@ export const MappingScreen = ({
           ) : null}
         </div>
       </div>
+
+      {validationIssues.length > 0 ? (
+        <section className="mapping-validation-list" aria-label="Validation issues">
+          {validationIssues.map((issue) => (
+            <p className={`notice ${issue.severity}`} key={issue.id}>
+              {issue.message}
+            </p>
+          ))}
+        </section>
+      ) : null}
 
       <footer className="action-bar mapping-action-bar">
         <span>特徴量 {featureMappings.length} 件</span>
