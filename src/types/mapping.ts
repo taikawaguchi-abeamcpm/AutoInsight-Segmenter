@@ -97,6 +97,7 @@ export interface FeatureConfig {
   label: string;
   dataType: FabricDataType;
   valueType: FeatureValueType;
+  valueLabels?: Record<string, string>;
   aggregation: AggregationType;
   timeWindow?: TimeWindow;
   missingValuePolicy: MissingValuePolicy;

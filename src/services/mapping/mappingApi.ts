@@ -46,7 +46,8 @@ const normalizeBootstrap = ({ dataset, mapping }: MappingBootstrap): MappingBoot
           featureConfig: column.featureConfig
             ? {
                 ...column.featureConfig,
-                valueType: column.featureConfig.valueType ?? fallbackFeatureValueType(columnById.get(column.columnId))
+                valueType: column.featureConfig.valueType ?? fallbackFeatureValueType(columnById.get(column.columnId)),
+                valueLabels: column.featureConfig.valueLabels
               }
             : undefined
         })),

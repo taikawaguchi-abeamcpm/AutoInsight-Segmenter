@@ -1,4 +1,4 @@
-const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
+const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
 const { buildRealAnalysisResult } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
@@ -124,6 +124,64 @@ const resolveConnectionForDataset = async (datasetId) => {
   }
 
   return connectionForDatasetId(datasetId);
+};
+
+const inferPositiveValue = (values, configuredPositiveValue) => {
+  const present = values.filter((value) => value !== null && value !== undefined && value !== '');
+  if (present.length === 0) {
+    return configuredPositiveValue;
+  }
+
+  const counts = new Map();
+  present.forEach((value) => {
+    const key = String(value);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  if (configuredPositiveValue !== undefined && counts.has(String(configuredPositiveValue))) {
+    return String(configuredPositiveValue);
+  }
+
+  const positiveHints = ['true', '1', 'yes', 'y', 'won', 'success', 'converted', '成約', 'あり'];
+  for (const hint of positiveHints) {
+    const matched = [...counts.keys()].find((value) => value.trim().toLowerCase() === hint);
+    if (matched !== undefined) {
+      return matched;
+    }
+  }
+
+  const ranked = [...counts.entries()].sort((left, right) => left[1] - right[1]);
+  return ranked[0]?.[0] ?? configuredPositiveValue;
+};
+
+const buildDefaultAnalysisConfig = (summary, positiveValue) => ({
+  mode: 'custom',
+  targetPositiveValue: String(positiveValue ?? summary.target.positiveValue ?? 'true'),
+  analysisUnit: 'customer',
+  targetType: summary.target.dataType,
+  optimizationPreference: 'balanced',
+  crossValidationFolds: 5,
+  maxFeatureCount: 80,
+  correlationThreshold: 0.9,
+  importanceMethod: 'hybrid',
+  patternCount: 10,
+  selectedFeatureKeys: summary.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey)
+});
+
+const inferTargetPositiveValueFromData = async ({ connection, req, mapping, dataset }) => {
+  const targetMapping = mapping.columnMappings.find((column) => column.columnRole === 'target') || mapping.columnMappings.find((column) => column.targetConfig);
+  const table = dataset.tables.find((item) => item.id === targetMapping?.tableId);
+  const column = table?.columns.find((item) => item.id === targetMapping?.columnId);
+  if (!table || !column) {
+    return targetMapping?.targetConfig?.positiveValue;
+  }
+
+  try {
+    const { rows } = await fetchTableRows(connection, req, table.name, [column.name], { pageSize: 200, maxRows: 200 });
+    return inferPositiveValue(rows.map((row) => row[column.name]), targetMapping?.targetConfig?.positiveValue);
+  } catch {
+    return targetMapping?.targetConfig?.positiveValue;
+  }
 };
 
 const computedConnectionId = (draft) =>
@@ -401,9 +459,22 @@ const routes = {
       return;
     }
 
+    const analysisConnection = await resolveConnectionForDataset(dataset.id || mapping.datasetId);
+    const positiveValue = analysisConnection
+      ? await inferTargetPositiveValueFromData({ connection: analysisConnection, req, mapping, dataset })
+      : undefined;
+    const summary = buildAnalysisSummary(mapping, dataset);
+    const summaryWithPositiveValue = {
+      ...summary,
+      target: {
+        ...summary.target,
+        positiveValue: positiveValue ?? summary.target.positiveValue
+      }
+    };
+
     json(context, 200, {
-      summary: buildAnalysisSummary(mapping, dataset),
-      defaultConfig: null
+      summary: summaryWithPositiveValue,
+      defaultConfig: buildDefaultAnalysisConfig(summaryWithPositiveValue, positiveValue)
     });
   },
 

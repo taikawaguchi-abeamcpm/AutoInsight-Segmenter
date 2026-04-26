@@ -71,6 +71,8 @@ const mode = (values) => {
   return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
 };
 
+const labelForValue = (feature, value) => feature.valueLabels?.[String(value)] || String(value);
+
 const categoryForTable = (tableName = '') => {
   const name = tableName.toLowerCase();
   if (/(order|purchase|transaction|sales|invoice|contract|deal|opportunity)/.test(name)) return 'transaction';
@@ -239,7 +241,7 @@ const analyzeCategoricalFeature = ({ rows, feature, baselineRate, minGroupCount 
         featureKey: feature.featureKey,
         operator: 'eq',
         value: best.value,
-        label: `${feature.label} が ${best.value}`
+        label: `${feature.label} が ${labelForValue(feature, best.value)}`
       }
     }
   };
@@ -295,6 +297,7 @@ const buildFeatureDescriptors = (mapping, dataset, target, config) => {
         sourceTableDisplayName: item.table.displayName,
         dataType: item.column.dataType,
         valueType: column.featureConfig.valueType || (item.column.dataType === 'integer' || item.column.dataType === 'float' ? 'numeric' : 'categorical'),
+        valueLabels: column.featureConfig.valueLabels,
         entityRole: tableMapping?.entityRole,
         category: categoryForEntityRole(tableMapping?.entityRole, item.table.name),
         aggregation: column.featureConfig.aggregation,
@@ -386,7 +389,7 @@ const materializeAnalysisRows = async ({ connection, req, dataset, target, targe
           if (left.at === undefined || right.at === undefined) return 0;
           return left.at - right.at;
         })
-        .map((item) => String(item.value));
+        .map((item) => labelForValue(feature, item.value));
       const aggregated = aggregateValues(values, feature);
       rowIds.forEach((rowId) => {
         const row = rowById.get(rowId);

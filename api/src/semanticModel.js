@@ -27,6 +27,7 @@ const featureConfigForColumn = (column) => ({
   label: column.displayName,
   dataType: column.dataType,
   valueType: featureValueType(column.dataType),
+  valueLabels: column.sampleValues ? Object.fromEntries(column.sampleValues.map((value) => [String(value), String(value)])) : undefined,
   aggregation: featureAggregation(column.dataType),
   missingValuePolicy: column.dataType === 'string' ? 'unknown_category' : 'zero_fill',
   enabled: true
@@ -168,6 +169,7 @@ const buildAnalysisSummary = (mapping, dataset) => {
         sourceColumnName: sourceColumn?.name || column.columnId,
         dataType: ['string', 'integer', 'float', 'boolean', 'date', 'datetime'].includes(column.featureConfig.dataType) ? column.featureConfig.dataType : 'string',
         valueType: column.featureConfig.valueType || featureValueType(column.featureConfig.dataType),
+        valueLabels: column.featureConfig.valueLabels,
         category: tableRole(table || {}) === 'transaction_fact' ? 'transaction' : tableRole(table || {}) === 'event_log' ? 'behavior' : 'profile',
         aggregation: column.featureConfig.aggregation,
         enabled: true,

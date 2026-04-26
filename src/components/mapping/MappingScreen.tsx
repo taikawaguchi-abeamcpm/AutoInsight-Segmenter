@@ -56,6 +56,25 @@ const fallbackColumnRole = (column: FabricColumn): SemanticColumnRole => {
 const fallbackFeatureValueType = (column: FabricColumn) =>
   column.dataType === 'integer' || column.dataType === 'float' ? 'numeric' as const : 'categorical' as const;
 
+const formatValueLabels = (labels?: Record<string, string>) =>
+  Object.entries(labels ?? {})
+    .map(([value, label]) => `${value}=${label}`)
+    .join('\n');
+
+const parseValueLabels = (text: string) =>
+  Object.fromEntries(
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separatorIndex = line.indexOf('=');
+        if (separatorIndex < 0) return [line, line];
+        return [line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim()];
+      })
+      .filter(([value]) => value.length > 0)
+  );
+
 const defaultTableMapping = (table: FabricTable): TableSemanticMapping => ({
   tableId: table.id,
   entityRole: 'dimension',
@@ -82,6 +101,7 @@ const defaultColumnMapping = (table: FabricTable, column: FabricColumn, role = f
           label: column.displayName,
           dataType: column.dataType,
           valueType: fallbackFeatureValueType(column),
+          valueLabels: column.sampleValues ? Object.fromEntries(column.sampleValues.map((value) => [String(value), String(value)])) : undefined,
           aggregation: column.dataType === 'float' || column.dataType === 'integer' ? 'sum' : 'latest',
           missingValuePolicy: column.dataType === 'string' ? 'unknown_category' : 'zero_fill',
           enabled: true
@@ -229,6 +249,7 @@ export const MappingScreen = ({
               label: requestedFeatureConfig?.label ?? businessName,
               dataType: column.dataType,
               valueType: requestedValueType,
+              valueLabels: requestedFeatureConfig?.valueLabels,
               aggregation:
                 requestedValueType === 'categorical'
                   ? ['sum', 'avg', 'min', 'max'].includes(requestedFeatureConfig?.aggregation ?? '') ? 'latest' : requestedFeatureConfig?.aggregation ?? defaultAggregation
@@ -539,23 +560,42 @@ export const MappingScreen = ({
                     </select>
                   </Field>
                   {selectedColumnMapping.columnRole === 'feature' && selectedColumnMapping.featureConfig ? (
-                    <Field label="特徴量の扱い">
-                      <select
-                        value={selectedColumnMapping.featureConfig.valueType ?? fallbackFeatureValueType(selectedColumn)}
-                        onChange={(event) =>
-                          upsertColumnMapping(selectedColumnTable, selectedColumn, {
-                            featureConfig: {
-                              ...selectedColumnMapping.featureConfig!,
-                              valueType: event.target.value as 'categorical' | 'numeric',
-                              aggregation: event.target.value === 'categorical' ? 'latest' : selectedColumn.dataType === 'integer' || selectedColumn.dataType === 'float' ? 'sum' : 'count'
+                    <>
+                      <Field label="特徴量の扱い">
+                        <select
+                          value={selectedColumnMapping.featureConfig.valueType ?? fallbackFeatureValueType(selectedColumn)}
+                          onChange={(event) =>
+                            upsertColumnMapping(selectedColumnTable, selectedColumn, {
+                              featureConfig: {
+                                ...selectedColumnMapping.featureConfig!,
+                                valueType: event.target.value as 'categorical' | 'numeric',
+                                aggregation: event.target.value === 'categorical' ? 'latest' : selectedColumn.dataType === 'integer' || selectedColumn.dataType === 'float' ? 'sum' : 'count'
+                              }
+                            })
+                          }
+                        >
+                          <option value="categorical">カテゴリ</option>
+                          <option value="numeric">数値</option>
+                        </select>
+                      </Field>
+                      {(selectedColumnMapping.featureConfig.valueType ?? fallbackFeatureValueType(selectedColumn)) === 'categorical' ? (
+                        <Field label="カテゴリ値の名称">
+                          <textarea
+                            rows={5}
+                            value={formatValueLabels(selectedColumnMapping.featureConfig.valueLabels)}
+                            onChange={(event) =>
+                              upsertColumnMapping(selectedColumnTable, selectedColumn, {
+                                featureConfig: {
+                                  ...selectedColumnMapping.featureConfig!,
+                                  valueLabels: parseValueLabels(event.target.value)
+                                }
+                              })
                             }
-                          })
-                        }
-                      >
-                        <option value="categorical">カテゴリ</option>
-                        <option value="numeric">数値</option>
-                      </select>
-                    </Field>
+                            placeholder="例:&#10;1=訪問&#10;2=電話&#10;3=メール"
+                          />
+                        </Field>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : (
