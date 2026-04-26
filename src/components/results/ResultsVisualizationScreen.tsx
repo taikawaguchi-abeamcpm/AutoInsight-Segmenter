@@ -1,6 +1,6 @@
 import { Download, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { isAbortError } from '../../services/client';
+import { isAbortError, isApiError } from '../../services/client';
 import { resultsApi } from '../../services/results/resultsApi';
 import type { AnalysisResultDocument, FeatureImportanceResult, SelectedSegmentContext } from '../../types/results';
 import { Badge, Button, Card, EmptyState, Metric, formatNumber, formatPercent } from '../common/ui';
@@ -24,6 +24,7 @@ export const ResultsVisualizationScreen = ({
   const [selectedFeatureKey, setSelectedFeatureKey] = useState<string | null>(null);
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
   const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -32,6 +33,7 @@ export const ResultsVisualizationScreen = ({
       .getResult(analysisJobId, { signal: controller.signal })
       .then((nextResult) => {
         setResult(nextResult);
+        setLoadError(null);
         setSelectedFeatureKey(nextResult.featureImportances[0]?.featureKey ?? null);
         setSelectedPatternId(nextResult.goldenPatterns[0]?.id ?? null);
         setSelectedSegmentIds(nextResult.segmentRecommendations.slice(0, 1).map((segment) => segment.id));
@@ -39,6 +41,7 @@ export const ResultsVisualizationScreen = ({
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
           setResult(null);
+          setLoadError(isApiError(error) || error instanceof Error ? error.message : '分析結果を読み込めませんでした。');
         }
       });
 
@@ -74,7 +77,7 @@ export const ResultsVisualizationScreen = ({
   };
 
   if (!result) {
-    return <div className="screen"><Card>結果を読み込んでいます。</Card></div>;
+    return <div className="screen"><Card>{loadError ?? '結果を読み込んでいます。'}</Card></div>;
   }
 
   const completed = result.status === 'completed';

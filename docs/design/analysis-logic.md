@@ -29,10 +29,15 @@
 
 ### 5.1 実データ分析の初期実装
 - 分析開始時に Fabric GraphQL から対象テーブルの行データを `first / after` でページング取得する。
-- 初期実装では、目的変数と同じ Query テーブルに存在する特徴量を対象にする。join をまたぐ特徴量生成は後続拡張とする。
+- 目的変数と同じ Query テーブルに存在する特徴量は、その行の値をそのまま分析値にする。
+- 目的変数テーブルと特徴量テーブルが `joinDefinitions` で直接接続されている場合は、join キーで特徴量テーブルを結合し、目的変数行ごとの特徴量値へ集計する。
+- 目的変数テーブルと特徴量テーブルが同一ハブテーブルに接続されている場合は、ハブキーを介して結合する。典型例は、目的変数テーブルと活動テーブルがどちらも顧客マスタへ接続されているケース。
 - 二値目的変数は `TargetConfig.positiveValue / negativeValue` を優先し、未設定の場合は boolean、0/1、true/false、成約/未成約などの値から推定する。
 - 数値特徴量は正例・負例の平均差を標準偏差で正規化し、目的変数平均との差と合わせて `importanceScore` を算出する。
 - カテゴリ特徴量は値ごとの正例率を集計し、全体平均との差が最も大きい値を代表パターンとして採用する。
+- join で複数行に展開される特徴量は `FeatureConfig.aggregation` に従って集計する。
+  - 数値: `sum / avg / min / max / latest / count / distinct_count`
+  - カテゴリ: `latest / none` は直近相当の最終値、その他は最頻値。`count / distinct_count` は数値特徴量として扱う。
 - `supportRate`、`conversionDelta`、`lift`、`estimatedAudienceSize` は実データ集計値から返す。
 - 大量データの上限は API 環境変数で制御する。
   - `FABRIC_ANALYSIS_PAGE_SIZE`
@@ -55,5 +60,5 @@ lift = patternConversionRate / baselineConversionRate
 - 探索時間上限内で複数モデルを比較し、精度、説明可能性、セグメント化しやすさを加味して採択する。
 
 ## 8. 変更履歴
-- 2026-04-26: Fabric GraphQL の行データに基づく初期実分析仕様を追記。
+- 2026-04-26: Fabric GraphQL の行データと join 定義に基づく実分析仕様を追記。
 - 2026-04-24: 設計レビューを受け、分析ロジック共通仕様を追加。

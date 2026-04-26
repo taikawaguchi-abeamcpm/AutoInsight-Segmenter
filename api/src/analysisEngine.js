@@ -43,6 +43,12 @@ const percentile = (values, ratio) => {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * ratio)))];
 };
 
+const mode = (values) => {
+  const counts = new Map();
+  values.forEach((value) => counts.set(String(value), (counts.get(String(value)) || 0) + 1));
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+};
+
 const categoryForTable = (tableName = '') => {
   const name = tableName.toLowerCase();
   if (/(order|purchase|transaction|sales|invoice|contract)/.test(name)) return 'transaction';
@@ -50,9 +56,76 @@ const categoryForTable = (tableName = '') => {
   return 'profile';
 };
 
-const analyzeNumericFeature = ({ rows, feature, targetColumnName, baselineRate, minGroupCount }) => {
+const columnIdMap = (dataset) => new Map(dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, { table, column }])));
+
+const edgeBetween = (mapping, leftTableId, rightTableId) => {
+  const join = (mapping.joinDefinitions || []).find(
+    (item) =>
+      (item.fromTableId === leftTableId && item.toTableId === rightTableId) ||
+      (item.fromTableId === rightTableId && item.toTableId === leftTableId)
+  );
+  if (!join || join.fromColumnIds.length !== 1 || join.toColumnIds.length !== 1) return null;
+
+  if (join.fromTableId === leftTableId) {
+    return { leftColumnId: join.fromColumnIds[0], rightColumnId: join.toColumnIds[0], join };
+  }
+
+  return { leftColumnId: join.toColumnIds[0], rightColumnId: join.fromColumnIds[0], join };
+};
+
+const findFeaturePlan = (mapping, dataset, targetTableId, featureTableId) => {
+  if (targetTableId === featureTableId) return { kind: 'same' };
+
+  const direct = edgeBetween(mapping, targetTableId, featureTableId);
+  if (direct) {
+    return {
+      kind: 'join',
+      targetKeyColumnId: direct.leftColumnId,
+      featureKeyColumnId: direct.rightColumnId
+    };
+  }
+
+  for (const hub of dataset.tables) {
+    if (hub.id === targetTableId || hub.id === featureTableId) continue;
+    const targetToHub = edgeBetween(mapping, targetTableId, hub.id);
+    const featureToHub = edgeBetween(mapping, featureTableId, hub.id);
+    if (targetToHub && featureToHub) {
+      return {
+        kind: 'join',
+        targetKeyColumnId: targetToHub.leftColumnId,
+        featureKeyColumnId: featureToHub.leftColumnId,
+        hubTableId: hub.id
+      };
+    }
+  }
+
+  return null;
+};
+
+const aggregateValues = (values, feature) => {
+  const present = values.filter((value) => !isMissing(value));
+  if (present.length === 0) return undefined;
+
+  const aggregation = feature.aggregation || 'latest';
+  const numericValues = present.map(toNumber).filter((value) => value !== undefined);
+  const numericFeature = feature.dataType === 'integer' || feature.dataType === 'float';
+
+  if (aggregation === 'count') return present.length;
+  if (aggregation === 'distinct_count') return new Set(present.map(String)).size;
+  if (numericFeature) {
+    if (aggregation === 'sum') return numericValues.reduce((sum, value) => sum + value, 0);
+    if (aggregation === 'avg') return mean(numericValues);
+    if (aggregation === 'min') return Math.min(...numericValues);
+    if (aggregation === 'max') return Math.max(...numericValues);
+    return numericValues[numericValues.length - 1];
+  }
+
+  return aggregation === 'latest' || aggregation === 'none' ? present[present.length - 1] : mode(present);
+};
+
+const analyzeNumericFeature = ({ rows, feature, baselineRate, minGroupCount }) => {
   const pairs = rows
-    .map((row) => ({ value: toNumber(row[feature.sourceColumnName]), target: row[targetColumnName] }))
+    .map((row) => ({ value: toNumber(row[feature.featureKey]), target: row.__target }))
     .filter((item) => item.value !== undefined);
   if (pairs.length < minGroupCount * 2) return null;
 
@@ -61,17 +134,13 @@ const analyzeNumericFeature = ({ rows, feature, targetColumnName, baselineRate, 
   if (positives.length < minGroupCount || negatives.length < minGroupCount) return null;
 
   const values = pairs.map((item) => item.value);
-  const posMean = mean(positives);
-  const negMean = mean(negatives);
-  const spread = stddev(values) || 1;
-  const effect = (posMean - negMean) / spread;
+  const effect = (mean(positives) - mean(negatives)) / (stddev(values) || 1);
   const direction = Math.abs(effect) < 0.05 ? 'neutral' : effect > 0 ? 'positive' : 'negative';
   const threshold = percentile(values, direction === 'negative' ? 0.25 : 0.75);
   if (threshold === undefined) return null;
 
   const matched = pairs.filter((item) => (direction === 'negative' ? item.value <= threshold : item.value >= threshold));
-  const matchedPositives = matched.filter((item) => item.target === 1).length;
-  const matchedRate = matched.length ? matchedPositives / matched.length : 0;
+  const matchedRate = matched.length ? matched.filter((item) => item.target === 1).length / matched.length : 0;
   const delta = matchedRate - baselineRate;
 
   return {
@@ -93,17 +162,15 @@ const analyzeNumericFeature = ({ rows, feature, targetColumnName, baselineRate, 
   };
 };
 
-const analyzeCategoricalFeature = ({ rows, feature, targetColumnName, baselineRate, minGroupCount }) => {
+const analyzeCategoricalFeature = ({ rows, feature, baselineRate, minGroupCount }) => {
   const groups = new Map();
-  let observed = 0;
   rows.forEach((row) => {
-    const raw = row[feature.sourceColumnName];
+    const raw = row[feature.featureKey];
     if (isMissing(raw)) return;
-    observed += 1;
     const key = String(raw);
     const group = groups.get(key) || { count: 0, positives: 0 };
     group.count += 1;
-    group.positives += row[targetColumnName] === 1 ? 1 : 0;
+    group.positives += row.__target === 1 ? 1 : 0;
     groups.set(key, group);
   });
 
@@ -112,18 +179,11 @@ const analyzeCategoricalFeature = ({ rows, feature, targetColumnName, baselineRa
     if (group.count < minGroupCount) continue;
     const conversionRate = group.positives / group.count;
     const delta = conversionRate - baselineRate;
-    const candidate = {
-      value,
-      count: group.count,
-      conversionRate,
-      delta
-    };
-    if (!best || Math.abs(candidate.delta) > Math.abs(best.delta)) {
-      best = candidate;
-    }
+    const candidate = { value, count: group.count, conversionRate, delta };
+    if (!best || Math.abs(candidate.delta) > Math.abs(best.delta)) best = candidate;
   }
 
-  if (!best || observed === 0) return null;
+  if (!best) return null;
   const direction = Math.abs(best.delta) < 0.01 ? 'neutral' : best.delta > 0 ? 'positive' : 'negative';
 
   return {
@@ -170,61 +230,164 @@ const failedResult = ({ analysisJobId, runId, mapping, dataset, config, message 
   segmentRecommendations: []
 });
 
-const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, mapping, dataset, config }) => {
-  const summary = buildAnalysisSummary(mapping, dataset);
-  const tableById = new Map(dataset.tables.map((table) => [table.id, table]));
-  const columnById = new Map(dataset.tables.flatMap((table) => table.columns.map((column) => [column.id, { table, column }])));
-  const targetMapping = mapping.columnMappings.find((column) => column.columnRole === 'target') || mapping.columnMappings.find((column) => column.targetConfig);
-  const target = targetMapping ? columnById.get(targetMapping.columnId) : null;
-  if (!target) {
-    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '目的変数カラムが見つからないため、実データ分析を開始できませんでした。' });
-  }
-
+const buildFeatureDescriptors = (mapping, dataset, target, config) => {
+  const columns = columnIdMap(dataset);
   const selectedKeys = config?.mode === 'custom' ? new Set(config.selectedFeatureKeys || []) : null;
-  const featureMappings = mapping.columnMappings
+
+  return mapping.columnMappings
     .filter((column) => column.columnRole === 'feature' && column.featureConfig?.enabled)
-    .filter((column) => !selectedKeys || selectedKeys.has(column.featureConfig.featureKey));
-  const sameTableFeatures = featureMappings
+    .filter((column) => !selectedKeys || selectedKeys.has(column.featureConfig.featureKey))
     .map((column) => {
-      const item = columnById.get(column.columnId);
-      if (!item || item.table.id !== target.table.id) return null;
+      const item = columns.get(column.columnId);
+      if (!item) return null;
+      const plan = findFeaturePlan(mapping, dataset, target.table.id, item.table.id);
+      if (!plan) return null;
+
       return {
         featureKey: column.featureConfig.featureKey,
         label: column.featureConfig.label || column.businessName,
         sourceColumnName: item.column.name,
+        sourceColumnId: item.column.id,
+        sourceTableId: item.table.id,
+        sourceTableName: item.table.name,
+        sourceTableDisplayName: item.table.displayName,
         dataType: item.column.dataType,
         category: categoryForTable(item.table.name),
         aggregation: column.featureConfig.aggregation,
-        tableName: item.table.displayName
+        plan
       };
     })
     .filter(Boolean);
+};
 
-  if (sameTableFeatures.length === 0) {
-    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '現時点の実分析は目的変数と同じテーブル上の特徴量に対応しています。同一テーブルの特徴量を選択してください。' });
+const materializeAnalysisRows = async ({ connection, req, dataset, target, targetMapping, features }) => {
+  const columns = columnIdMap(dataset);
+  const targetKeyColumnIds = features.map((feature) => feature.plan.targetKeyColumnId).filter(Boolean);
+  const sameTableColumns = features.filter((feature) => feature.plan.kind === 'same').map((feature) => feature.sourceColumnName);
+  const targetKeyColumns = targetKeyColumnIds.map((columnId) => columns.get(columnId)?.column.name).filter(Boolean);
+  const targetFetchColumns = [target.column.name, ...targetKeyColumns, ...sameTableColumns];
+  const { rows: rawTargetRows, truncated } = await fetchTableRows(connection, req, target.table.name, targetFetchColumns);
+  const rows = rawTargetRows
+    .map((row, index) => ({
+      __rowId: index,
+      __target: normalizeBool(row[target.column.name], targetMapping.targetConfig),
+      __raw: row
+    }))
+    .filter((row) => row.__target !== undefined);
+
+  const rowById = new Map(rows.map((row) => [row.__rowId, row]));
+
+  features
+    .filter((feature) => feature.plan.kind === 'same')
+    .forEach((feature) => {
+      rows.forEach((row) => {
+        row[feature.featureKey] = row.__raw[feature.sourceColumnName];
+      });
+    });
+
+  for (const feature of features.filter((item) => item.plan.kind === 'join')) {
+    const targetKeyName = columns.get(feature.plan.targetKeyColumnId)?.column.name;
+    const featureKeyName = columns.get(feature.plan.featureKeyColumnId)?.column.name;
+    if (!targetKeyName || !featureKeyName) continue;
+
+    const targetRowsByKey = new Map();
+    rows.forEach((row) => {
+      const key = row.__raw[targetKeyName];
+      if (isMissing(key)) return;
+      const textKey = String(key);
+      const bucket = targetRowsByKey.get(textKey) || [];
+      bucket.push(row.__rowId);
+      targetRowsByKey.set(textKey, bucket);
+    });
+    if (targetRowsByKey.size === 0) continue;
+
+    const { rows: featureRows } = await fetchTableRows(connection, req, feature.sourceTableName, [
+      featureKeyName,
+      feature.sourceColumnName
+    ]);
+    const featureValuesByKey = new Map();
+    featureRows.forEach((featureRow) => {
+      const key = featureRow[featureKeyName];
+      if (isMissing(key)) return;
+      const textKey = String(key);
+      const bucket = featureValuesByKey.get(textKey) || [];
+      bucket.push(featureRow[feature.sourceColumnName]);
+      featureValuesByKey.set(textKey, bucket);
+    });
+
+    targetRowsByKey.forEach((rowIds, key) => {
+      const aggregated = aggregateValues(featureValuesByKey.get(key) || [], feature);
+      rowIds.forEach((rowId) => {
+        const row = rowById.get(rowId);
+        if (row) row[feature.featureKey] = aggregated;
+      });
+    });
   }
 
-  const columnNames = [target.column.name, ...sameTableFeatures.map((feature) => feature.sourceColumnName)];
-  const { rows: rawRows, truncated } = await fetchTableRows(connection, req, target.table.name, columnNames);
-  const rows = rawRows
-    .map((row) => ({ ...row, [target.column.name]: normalizeBool(row[target.column.name], targetMapping.targetConfig) }))
-    .filter((row) => row[target.column.name] !== undefined);
+  rows.forEach((row) => {
+    delete row.__raw;
+  });
 
+  return { rows, truncated };
+};
+
+const buildInteractionPairs = (patterns, rows) => {
+  if (patterns.length < 2) return [];
+  const [left, right] = patterns;
+  const matches = (row, condition) => {
+    const value = row[condition.featureKey];
+    if (condition.operator === 'eq') return String(value) === String(condition.value);
+    const numeric = toNumber(value);
+    if (numeric === undefined) return false;
+    if (condition.operator === 'gte') return numeric >= condition.value;
+    if (condition.operator === 'lte') return numeric <= condition.value;
+    return false;
+  };
+  const matched = rows.filter((row) => matches(row, left.conditions[0]) && matches(row, right.conditions[0]));
+  if (matched.length === 0) return [];
+  const rate = matched.filter((row) => row.__target === 1).length / matched.length;
+
+  return [{
+    leftFeatureKey: left.conditions[0].featureKey,
+    rightFeatureKey: right.conditions[0].featureKey,
+    synergyScore: clampScore(rate * 100),
+    summary: `${left.conditions[0].label} と ${right.conditions[0].label} を同時に満たす ${matched.length.toLocaleString('ja-JP')} 行の目的変数率は ${Math.round(rate * 1000) / 10}% です。`
+  }];
+};
+
+const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, mapping, dataset, config }) => {
+  const summary = buildAnalysisSummary(mapping, dataset);
+  const columns = columnIdMap(dataset);
+  const targetMapping = mapping.columnMappings.find((column) => column.columnRole === 'target') || mapping.columnMappings.find((column) => column.targetConfig);
+  const target = targetMapping ? columns.get(targetMapping.columnId) : null;
+  if (!target) {
+    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '目的変数カラムが見つからないため、実データ分析を開始できませんでした。' });
+  }
+
+  const features = buildFeatureDescriptors(mapping, dataset, target, config);
+  if (features.length === 0) {
+    return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '分析可能な特徴量がありません。目的変数テーブルと同一テーブル、またはjoin定義で接続できる特徴量を選択してください。' });
+  }
+
+  const { rows, truncated } = await materializeAnalysisRows({ connection, req, dataset, target, targetMapping, features });
   if (rows.length === 0) {
     return failedResult({ analysisJobId, runId, mapping, dataset, config, message: '目的変数を二値として判定できる行がありませんでした。目的変数の役割または正例/負例の値を確認してください。' });
   }
 
-  const positiveCount = rows.filter((row) => row[target.column.name] === 1).length;
+  const positiveCount = rows.filter((row) => row.__target === 1).length;
   const baselineRate = positiveCount / rows.length;
   const minGroupCount = Math.max(3, Math.ceil(rows.length * 0.02));
   const importances = [];
 
-  sameTableFeatures.forEach((feature) => {
-    const missingCount = rows.filter((row) => isMissing(row[feature.sourceColumnName])).length;
-    const analysis =
-      feature.dataType === 'integer' || feature.dataType === 'float'
-        ? analyzeNumericFeature({ rows, feature, targetColumnName: target.column.name, baselineRate, minGroupCount })
-        : analyzeCategoricalFeature({ rows, feature, targetColumnName: target.column.name, baselineRate, minGroupCount });
+  features.forEach((feature) => {
+    const missingCount = rows.filter((row) => isMissing(row[feature.featureKey])).length;
+    const numericFeature =
+      feature.dataType === 'integer' ||
+      feature.dataType === 'float' ||
+      ['sum', 'avg', 'count', 'distinct_count', 'min', 'max'].includes(feature.aggregation);
+    const analysis = numericFeature
+      ? analyzeNumericFeature({ rows, feature, baselineRate, minGroupCount })
+      : analyzeCategoricalFeature({ rows, feature, baselineRate, minGroupCount });
 
     if (!analysis) return;
     importances.push({
@@ -238,7 +401,7 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
         direction: analysis.direction,
         aggregation: feature.aggregation,
         missingRate: missingCount / rows.length,
-        description: `${target.table.displayName}.${feature.sourceColumnName} を実データ ${rows.length.toLocaleString('ja-JP')} 行で集計し、目的変数 ${target.column.displayName} との差を評価しました。`
+        description: `${feature.sourceTableDisplayName}.${feature.sourceColumnName} を実データ ${rows.length.toLocaleString('ja-JP')} 行に結合・集計し、目的変数 ${target.column.displayName} との差を評価しました。`
       }
     });
   });
@@ -281,7 +444,7 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
     mode: config?.mode || 'custom',
     status: 'completed',
     progressPercent: 100,
-    message: `Fabric実データ ${rows.length.toLocaleString('ja-JP')} 行を集計して分析しました。${truncated ? '上限行数までの集計です。' : ''}`,
+    message: `Fabric実データ ${rows.length.toLocaleString('ja-JP')} 行を結合・集計して分析しました。${truncated ? '上限行数までの集計です。' : ''}`,
     createdAt: nowIso(),
     startedAt: nowIso(),
     completedAt: nowIso(),
@@ -295,7 +458,7 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
       improvementRate: patterns[0] && baselineRate > 0 ? (baselineRate + (patterns[0].conversionDelta || 0)) / baselineRate - 1 : undefined
     },
     featureImportances: topImportances.map((item) => item.result),
-    interactionPairs: [],
+    interactionPairs: buildInteractionPairs(patterns, rows),
     goldenPatterns: patterns,
     segmentRecommendations: segments
   };

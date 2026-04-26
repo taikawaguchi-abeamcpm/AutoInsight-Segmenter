@@ -1,7 +1,7 @@
 const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
 const { buildRealAnalysisResult } = require('../src/analysisEngine');
-const { buildAnalysisResult, buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
+const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 
 const actor = 'system';
 
@@ -271,8 +271,16 @@ const routes = {
     const analysisJobId = `job-${makeHash({ runId, now })}`;
     const estimatedDurationSeconds = config?.mode === 'autopilot' ? 600 : 240;
     const activeConnection = await getActiveConnection();
+    if (!activeConnection) {
+      error(context, 400, 'FABRIC.NO_ACTIVE_CONNECTION', '実データ分析には有効なFabric接続が必要です。');
+      return;
+    }
     const resolvedDataset = dataset || (activeConnection ? (await buildDataset(activeConnection, req, makeHash)).fabricDataset : null);
     const resolvedMapping = mapping || null;
+    if (!resolvedDataset || !resolvedMapping) {
+      error(context, 400, 'ANALYSIS.INPUT_REQUIRED', '実データ分析にはdatasetとmappingが必要です。');
+      return;
+    }
 
     await upsert('analysisRuns', {
       id: analysisJobId,
@@ -290,19 +298,14 @@ const routes = {
       updatedAt: now
     });
 
-    let analysisResult = null;
-    if (resolvedDataset && resolvedMapping) {
-      analysisResult = activeConnection
-        ? await buildRealAnalysisResult({ connection: activeConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config })
-        : buildAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
-      await upsert('analysisResults', {
-        ...analysisResult,
-        id: analysisResult.analysisJobId,
-        jobId: analysisResult.analysisJobId,
-        partitionKey: analysisResult.analysisJobId,
-        updatedAt: now
-      });
-    }
+    const analysisResult = await buildRealAnalysisResult({ connection: activeConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+    await upsert('analysisResults', {
+      ...analysisResult,
+      id: analysisResult.analysisJobId,
+      jobId: analysisResult.analysisJobId,
+      partitionKey: analysisResult.analysisJobId,
+      updatedAt: now
+    });
 
     json(context, 200, {
       analysisJobId,

@@ -1,6 +1,6 @@
 import { AlertTriangle, Play, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { isAbortError, makeHash } from '../../services/client';
+import { isAbortError, isApiError, makeHash } from '../../services/client';
 import { analysisApi, createDefaultConfig } from '../../services/analysis/analysisApi';
 import type { AnalysisInputSummary, AnalysisMode, AnalysisRunConfig, AnalysisRunValidation, CustomAnalysisConfig } from '../../types/analysis';
 import type { SemanticMappingDocument } from '../../types/mapping';
@@ -83,6 +83,7 @@ export const AnalysisRunScreen = ({
   const [config, setConfig] = useState<AnalysisRunConfig | null>(null);
   const [validation, setValidation] = useState<AnalysisRunValidation | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,12 +95,14 @@ export const AnalysisRunScreen = ({
         setSummary(bootstrap.summary);
         setConfig(defaultConfig);
         setValidation(validateConfigLocally(bootstrap.summary, defaultConfig));
+        setLoadError(null);
       })
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
           setSummary(null);
           setConfig(null);
           setValidation(null);
+          setLoadError(isApiError(error) || error instanceof Error ? error.message : '分析入力を読み込めませんでした。');
         }
       });
 
@@ -207,7 +210,7 @@ export const AnalysisRunScreen = ({
   };
 
   if (!summary || !config) {
-    return <div className="screen"><Card>分析入力を読み込んでいます。</Card></div>;
+    return <div className="screen"><Card>{loadError ?? '分析入力を読み込んでいます。'}</Card></div>;
   }
 
   const customConfig = config.mode === 'custom' ? config : null;

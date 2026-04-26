@@ -1,5 +1,4 @@
-import { apiRequest, delay, makeHash, type RequestOptions } from '../client';
-import { buildAnalysisSummary, nowIso } from '../mockData';
+import { apiRequest, createApiError, delay, type RequestOptions } from '../client';
 import type {
   AnalysisInputSummary,
   AnalysisMode,
@@ -66,13 +65,11 @@ export const analysisApi = {
       }
     }
 
-    await delay(undefined, options.signal);
-    const summary = buildAnalysisSummary(typeof mappingOrId === 'string' ? mappingOrId : mappingOrId.id);
-
-    return {
-      summary,
-      defaultConfig: createDefaultConfig(summary, 'custom')
-    };
+    throw createApiError({
+      code: 'ANALYSIS_BOOTSTRAP_UNAVAILABLE',
+      message: '実データ分析の入力サマリを取得できません。API接続とFabric接続を確認してください。',
+      retryable: true
+    });
   },
 
   async validate(summary: AnalysisInputSummary, config: AnalysisRunConfig, options: RequestOptions = {}): Promise<AnalysisRunValidation> {
@@ -139,14 +136,10 @@ export const analysisApi = {
       return response;
     }
 
-    await delay(240, options.signal);
-
-    return {
-      analysisJobId: 'job-demo-001',
-      runId: `run-${makeHash({ mappingDocumentId, config })}`,
-      status: 'queued',
-      startedAt: nowIso(),
-      estimatedDurationSeconds: config.mode === 'autopilot' ? 600 : 240
-    };
+    throw createApiError({
+      code: 'ANALYSIS_START_UNAVAILABLE',
+      message: '実データ分析を開始できません。API接続とFabric接続を確認してください。',
+      retryable: true
+    });
   }
 };
