@@ -11,6 +11,9 @@ const directionLabel: Record<FeatureImportanceResult['direction'], string> = {
   neutral: '中立'
 };
 
+const conditionValueLabel = (condition: { value: string | number | boolean; valueTo?: string | number }) =>
+  condition.valueTo !== undefined ? `${condition.value} - ${condition.valueTo}` : String(condition.value);
+
 export const ResultsVisualizationScreen = ({
   analysisJobId,
   onBack,
@@ -202,6 +205,13 @@ export const ResultsVisualizationScreen = ({
                 onClick={() => setSelectedPatternId(pattern.id)}
               >
                 <strong>{pattern.title}</strong>
+                <div className="chip-list">
+                  {pattern.conditions.map((condition) => (
+                    <span className="chip strong" key={`${pattern.id}-${condition.featureKey}-${condition.label}`}>
+                      {condition.label}
+                    </span>
+                  ))}
+                </div>
                 <p>{pattern.description}</p>
                 <div className="card-row">
                   <Badge tone="success">support {formatPercent(pattern.supportRate)}</Badge>
@@ -214,9 +224,13 @@ export const ResultsVisualizationScreen = ({
           {selectedPattern ? (
             <section className="detail-section">
               <h3>条件</h3>
-              <div className="chip-list">
+              <div className="data-table">
                 {selectedPattern.conditions.map((condition) => (
-                  <span className="chip" key={`${condition.featureKey}-${condition.label}`}>{condition.label}</span>
+                  <div className="sample-row" key={`${condition.featureKey}-${condition.label}`}>
+                    <strong>{condition.label}</strong>
+                    <span>{conditionValueLabel(condition)}</span>
+                    <small>operator: {condition.operator}</small>
+                  </div>
                 ))}
               </div>
             </section>

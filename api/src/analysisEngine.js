@@ -37,6 +37,12 @@ const stddev = (values) => {
 
 const clampScore = (value) => Math.max(0, Math.min(100, Math.round(value)));
 
+const formatRate = (value) => `${Math.round(value * 1000) / 10}%`;
+
+const formatPointDelta = (value) => `${Math.round(value * 1000) / 10}pt`;
+
+const patternDirectionText = (delta) => (delta >= 0 ? '高い' : '低い');
+
 const percentile = (values, ratio) => {
   if (!values.length) return undefined;
   const sorted = [...values].sort((left, right) => left - right);
@@ -413,14 +419,14 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
     .slice(0, config?.patternCount || 5)
     .map((item, index) => ({
       id: `pattern-real-${index + 1}`,
-      title: `${item.feature.label} による差分`,
+      title: item.analysis.pattern.condition.label,
       conditions: [item.analysis.pattern.condition],
       supportRate: item.analysis.pattern.supportRate,
       lift: item.analysis.pattern.lift,
       conversionDelta: item.analysis.pattern.conversionDelta,
       confidence: Math.min(0.95, Math.max(0.35, item.result.importanceScore / 100)),
-      description: `${item.analysis.pattern.matchedCount.toLocaleString('ja-JP')} 行で ${summary.target.label} の比率が ${Math.round(item.analysis.pattern.conversionRate * 1000) / 10}% でした。全体平均との差は ${Math.round(item.analysis.pattern.conversionDelta * 1000) / 10}pt です。`,
-      recommendedAction: 'この条件をセグメント候補として施策検証してください。'
+      description: `${item.analysis.pattern.condition.label} の ${item.analysis.pattern.matchedCount.toLocaleString('ja-JP')} 行では、${summary.target.label} の比率が ${formatRate(item.analysis.pattern.conversionRate)} でした。全体平均 ${formatRate(baselineRate)} より ${formatPointDelta(Math.abs(item.analysis.pattern.conversionDelta))} ${patternDirectionText(item.analysis.pattern.conversionDelta)}条件です。`,
+      recommendedAction: `${item.analysis.pattern.condition.label} を条件にしたセグメントで施策検証してください。`
     }));
 
   const segments = patterns.map((pattern, index) => ({
