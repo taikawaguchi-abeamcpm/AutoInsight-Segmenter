@@ -43,7 +43,7 @@ let savedConnections: FabricConnectionConfig[] = readConnections() ?? [
   sampleConnection
 ];
 
-const validateDraft = (draft: FabricConnectionDraft) => {
+const validateDraft = (draft: FabricConnectionDraft, options: { allowStoredSecret?: boolean } = {}) => {
   if (!draft.displayName.trim()) {
     throw createApiError({
       code: 'VALIDATION.DISPLAY_NAME_REQUIRED',
@@ -68,7 +68,7 @@ const validateDraft = (draft: FabricConnectionDraft) => {
     });
   }
 
-  if (draft.authMode === 'service_principal' && !draft.clientSecret?.trim()) {
+  if (draft.authMode === 'service_principal' && !draft.clientSecret?.trim() && !options.allowStoredSecret) {
     throw createApiError({
       code: 'VALIDATION.SECRET_REQUIRED',
       message: 'Service principal 方式では Client Secret の登録が必要です。',
@@ -110,7 +110,8 @@ export const fabricConnectionApi = {
     }
 
     await delay(460);
-    validateDraft(draft);
+    const existing = draft.id ? savedConnections.find((connection) => connection.id === draft.id) : undefined;
+    validateDraft(draft, { allowStoredSecret: Boolean(existing?.secretConfigured) });
 
     return {
       status: 'ready',
@@ -133,11 +134,11 @@ export const fabricConnectionApi = {
     }
 
     await delay(260);
-    validateDraft(draft);
+    const id = draft.id || `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
+    const existing = savedConnections.find((connection) => connection.id === id);
+    validateDraft(draft, { allowStoredSecret: Boolean(existing?.secretConfigured) });
 
     const now = nowIso();
-    const id = `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
-    const existing = savedConnections.find((connection) => connection.id === id);
     const next: FabricConnectionConfig = {
       id,
       displayName: draft.displayName.trim(),

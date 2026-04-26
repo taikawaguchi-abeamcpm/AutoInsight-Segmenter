@@ -108,7 +108,7 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
     setError(null);
     setMessage(null);
     try {
-      const result = await fabricConnectionApi.test(draft);
+      const result = await fabricConnectionApi.test({ ...draft, id: selectedConnection?.id });
       setTestResult(result);
       setMessage(result.message);
     } catch (nextError) {
@@ -124,7 +124,7 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
     setError(null);
     setMessage(null);
     try {
-      const saved = await fabricConnectionApi.save(draft);
+      const saved = await fabricConnectionApi.save({ ...draft, id: selectedConnection?.id });
       setConnections((current) => [saved, ...current.filter((connection) => connection.id !== saved.id).map((connection) => ({ ...connection, isActive: false }))]);
       setSelectedConnectionId(saved.id);
       setDraft((current) => ({ ...current, clientSecret: '' }));

@@ -126,6 +126,36 @@ const resolveConnectionForDataset = async (datasetId) => {
   return connectionForDatasetId(datasetId);
 };
 
+const computedConnectionId = (draft) =>
+  `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl?.trim(), tenantId: draft.tenantId?.trim() })}`;
+
+const findExistingConnectionForDraft = async (draft) => {
+  const { queryAll } = getStore();
+  const ids = [...new Set([draft.id, draft.connectionId, computedConnectionId(draft)].filter(Boolean))];
+
+  for (const id of ids) {
+    const byId = (await queryAll('fabricConnections', {
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: id }]
+    }))[0];
+    if (byId) {
+      return byId;
+    }
+  }
+
+  if (!draft.endpointUrl?.trim() || !draft.tenantId?.trim()) {
+    return null;
+  }
+
+  return (await queryAll('fabricConnections', {
+    query: 'SELECT * FROM c WHERE c.endpointUrl = @endpointUrl AND c.tenantId = @tenantId',
+    parameters: [
+      { name: '@endpointUrl', value: draft.endpointUrl.trim() },
+      { name: '@tenantId', value: draft.tenantId.trim() }
+    ]
+  }))[0] || null;
+};
+
 const listConnections = async () => {
   const { queryAll } = getStore();
   const records = await queryAll('fabricConnections', {
@@ -194,12 +224,7 @@ const routes = {
 
   'POST fabric-connections/test': async (req, context) => {
     const draft = readBody(req);
-    const id = `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
-    const { queryAll } = getStore();
-    const rawExisting = (await queryAll('fabricConnections', {
-      query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: id }]
-    }))[0];
+    const rawExisting = await findExistingConnectionForDraft(draft);
     const testConnection = {
       ...draft,
       clientSecret: draft.clientSecret?.trim() || rawExisting?.clientSecret
@@ -220,15 +245,12 @@ const routes = {
 
   'POST fabric-connections': async (req, context) => {
     const draft = readBody(req);
-    const id = `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl, tenantId: draft.tenantId })}`;
+    const id = computedConnectionId(draft);
     const now = nowIso();
     const current = await listConnections();
     const existing = current.find((connection) => connection.id === id);
-    const { queryAll, upsert } = getStore();
-    const rawExisting = (await queryAll('fabricConnections', {
-      query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: id }]
-    }))[0];
+    const { upsert } = getStore();
+    const rawExisting = await findExistingConnectionForDraft(draft);
     validateDraft(draft, { requireSecret: draft.authMode === 'service_principal' && !rawExisting?.clientSecret });
 
     await Promise.all(

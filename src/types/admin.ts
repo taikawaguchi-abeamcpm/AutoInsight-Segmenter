@@ -21,6 +21,7 @@ export interface FabricConnectionConfig {
 }
 
 export interface FabricConnectionDraft {
+  id?: string;
   displayName: string;
   endpointUrl: string;
   tenantId: string;
