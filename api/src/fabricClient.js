@@ -1,6 +1,8 @@
 const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
 const ROW_COUNT_PAGE_SIZE = Number(process.env.FABRIC_ROW_COUNT_PAGE_SIZE || 1000);
 const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 1000);
+const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 1000);
+const ANALYSIS_MAX_ROWS = Number(process.env.FABRIC_ANALYSIS_MAX_ROWS || 100000);
 
 const getGraphqlApiName = (endpointUrl) => {
   try {
@@ -361,6 +363,55 @@ const fetchRowCounts = async (connection, req, tableFields, objectTypes) => {
   return counts;
 };
 
+const fetchTableRows = async (connection, req, tableName, columnNames, options = {}) => {
+  const pageSize = Number(options.pageSize || ANALYSIS_PAGE_SIZE);
+  const maxRows = Number(options.maxRows || ANALYSIS_MAX_ROWS);
+  const selectedColumns = [...new Set(columnNames)].filter(Boolean);
+  if (!tableName || selectedColumns.length === 0) {
+    return { rows: [], truncated: false };
+  }
+
+  const rows = [];
+  let after;
+  let truncated = false;
+
+  while (rows.length < maxRows) {
+    const remaining = maxRows - rows.length;
+    const first = Math.min(pageSize, remaining);
+    const args = [`first: ${first}`];
+    if (after) {
+      args.push(`after: ${JSON.stringify(after)}`);
+    }
+
+    const data = await executeFabricGraphql(
+      connection,
+      req,
+      `query AutoInsightAnalysisRows {
+        page: ${tableName}(${args.join(', ')}) {
+          items {
+            ${selectedColumns.join('\n')}
+          }
+          endCursor
+          hasNextPage
+        }
+      }`
+    );
+
+    const result = data?.page;
+    const items = Array.isArray(result?.items) ? result.items : [];
+    rows.push(...items);
+
+    if (!result?.hasNextPage || !result?.endCursor || items.length === 0) {
+      break;
+    }
+
+    after = result.endCursor;
+    truncated = rows.length >= maxRows;
+  }
+
+  return { rows, truncated };
+};
+
 const isBusinessQueryField = (field, objectTypes) => {
   if (!field?.name || field.name.startsWith('__')) return false;
   const rowType = resolveRowType(field, objectTypes);
@@ -490,6 +541,7 @@ module.exports = {
   buildFabricDatasetFromSchema,
   buildDataset,
   executeFabricGraphql,
+  fetchTableRows,
   getActiveConnection,
   getBearerToken,
   getGraphqlApiName,

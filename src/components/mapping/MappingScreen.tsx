@@ -343,8 +343,8 @@ export const MappingScreen = ({
     <div className="screen">
       <header className="screen-header">
         <div>
-          <h1>セマンティック・マッピング</h1>
-          <p>{datasetContext.datasetName} のテーブル、カラム、結合条件に業務上の意味を付けます。</p>
+          <h1>データセットの意味付け</h1>
+          <p>テーブル・列名の意味付け、結合条件の指定、目的変数・特徴量を選択します。</p>
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>戻る</Button>
@@ -362,11 +362,11 @@ export const MappingScreen = ({
             <Badge tone="info">{fabricDataset.tables.length} テーブル</Badge>
           </div>
           <Field label="検索">
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="テーブル名、カラム名、論理名" />
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="テーブル名、論理名" />
           </Field>
           <label className="check-row">
             <input type="checkbox" checked={showOnlyUnmapped} onChange={(event) => setShowOnlyUnmapped(event.target.checked)} />
-            未設定だけ表示
+            未設定の列のみ表示
           </label>
 
           <div className="source-tree">
@@ -428,7 +428,7 @@ export const MappingScreen = ({
           {activeTab === 'tables' ? (
             <Card className="editor-panel">
               <div className="panel-heading">
-                <h2>テーブルの業務意味付け</h2>
+                <h2>テーブルの意味付け</h2>
                 {selectedTableMapping ? <Badge tone="success">{entityLabels[selectedTableMapping.entityRole]}</Badge> : null}
               </div>
               {selectedTable && selectedTableMapping ? (
@@ -439,7 +439,7 @@ export const MappingScreen = ({
                     <dt>行数</dt>
                     <dd>{formatNumber(selectedTable.rowCount)}</dd>
                   </div>
-                  <Field label="論理名">
+                  <Field label="名前">
                     <input value={selectedTableMapping.businessName} onChange={(event) => upsertTableMapping(selectedTable, { businessName: event.target.value })} />
                   </Field>
                   <Field label="補足">
@@ -467,7 +467,7 @@ export const MappingScreen = ({
           {activeTab === 'columns' ? (
             <Card className="editor-panel">
               <div className="panel-heading">
-                <h2>カラムの業務意味付け</h2>
+                <h2>カラムの意味付け</h2>
                 {selectedColumnMapping ? <Badge tone={roleTone[selectedColumnMapping.columnRole]}>{columnLabels[selectedColumnMapping.columnRole]}</Badge> : null}
               </div>
               {selectedColumn && selectedColumnTable && selectedColumnMapping ? (
@@ -482,7 +482,7 @@ export const MappingScreen = ({
                     <dt>キー</dt>
                     <dd>{selectedColumn.isPrimaryKey ? 'PK' : selectedColumn.isForeignKey ? 'FK' : 'なし'}</dd>
                   </div>
-                  <Field label="論理名">
+                  <Field label="名前">
                     <input value={selectedColumnMapping.businessName} onChange={(event) => upsertColumnMapping(selectedColumnTable, selectedColumn, { businessName: event.target.value })} />
                   </Field>
                   <Field label="補足">
@@ -502,7 +502,7 @@ export const MappingScreen = ({
                   </Field>
                 </div>
               ) : (
-                <EmptyState title="カラム未選択" description="左の一覧からカラムを選択してください。" />
+                <EmptyState title="列が未選択" description="左の一覧から列を選択してください。" />
               )}
             </Card>
           ) : null}
@@ -520,7 +520,7 @@ export const MappingScreen = ({
                   const toTable = tableById.get(join.toTableId);
                   return (
                     <section className="join-editor-row" key={join.id}>
-                      <Field label="元テーブル">
+                      <Field label="結合元テーブル">
                         <select value={join.fromTableId} onChange={(event) => {
                           const table = tableById.get(event.target.value);
                           updateJoin(join.id, { fromTableId: event.target.value, fromColumnIds: table?.columns[0] ? [table.columns[0].id] : [] });
@@ -528,7 +528,7 @@ export const MappingScreen = ({
                           {fabricDataset.tables.map((table) => <option key={table.id} value={table.id}>{table.displayName}</option>)}
                         </select>
                       </Field>
-                      <Field label="元カラム">
+                      <Field label="結合元の列">
                         <select value={join.fromColumnIds[0] ?? ''} onChange={(event) => updateJoin(join.id, { fromColumnIds: [event.target.value] })}>
                           {(fromTable?.columns ?? []).map((column) => <option key={column.id} value={column.id}>{column.displayName}</option>)}
                         </select>
@@ -541,7 +541,7 @@ export const MappingScreen = ({
                           {fabricDataset.tables.map((table) => <option key={table.id} value={table.id}>{table.displayName}</option>)}
                         </select>
                       </Field>
-                      <Field label="結合先カラム">
+                      <Field label="結合先の列">
                         <select value={join.toColumnIds[0] ?? ''} onChange={(event) => updateJoin(join.id, { toColumnIds: [event.target.value] })}>
                           {(toTable?.columns ?? []).map((column) => <option key={column.id} value={column.id}>{column.displayName}</option>)}
                         </select>
@@ -579,7 +579,7 @@ export const MappingScreen = ({
               <div className="role-assignment-grid">
                 <section>
                   <h3>目的変数</h3>
-                  <Field label="目的変数カラム">
+                  <Field label="目的変数の列">
                     <select
                       value={targetMapping?.columnId ?? ''}
                       onChange={(event) => {
@@ -600,7 +600,7 @@ export const MappingScreen = ({
                     <Button variant="secondary" onClick={applySelectedTableFeatures} disabled={!selectedTable}>選択テーブルを特徴量にする</Button>
                     <Button variant="secondary" onClick={clearSelectedTableFeatures} disabled={!selectedTable}>選択テーブルの特徴量を解除</Button>
                   </div>
-                  <p className="subtle-text">顧客ID、日時、目的変数に設定済みのカラムは一括指定の対象外です。</p>
+                  <p className="subtle-text">顧客ID、日時、目的変数に設定済みの列は一括指定の対象外です。</p>
                 </section>
               </div>
               <div className="feature-check-list">

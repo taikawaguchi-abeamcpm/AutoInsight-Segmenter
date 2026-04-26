@@ -1,5 +1,6 @@
 const { buildDataset, introspectFabric, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
+const { buildRealAnalysisResult } = require('../src/analysisEngine');
 const { buildAnalysisResult, buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 
 const actor = 'system';
@@ -269,7 +270,7 @@ const routes = {
     const runId = `run-${makeHash({ mappingDocumentId, config })}`;
     const analysisJobId = `job-${makeHash({ runId, now })}`;
     const estimatedDurationSeconds = config?.mode === 'autopilot' ? 600 : 240;
-    const activeConnection = dataset ? null : await getActiveConnection();
+    const activeConnection = await getActiveConnection();
     const resolvedDataset = dataset || (activeConnection ? (await buildDataset(activeConnection, req, makeHash)).fabricDataset : null);
     const resolvedMapping = mapping || null;
 
@@ -289,13 +290,16 @@ const routes = {
       updatedAt: now
     });
 
+    let analysisResult = null;
     if (resolvedDataset && resolvedMapping) {
-      const result = buildAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+      analysisResult = activeConnection
+        ? await buildRealAnalysisResult({ connection: activeConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config })
+        : buildAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
       await upsert('analysisResults', {
-        ...result,
-        id: result.analysisJobId,
-        jobId: result.analysisJobId,
-        partitionKey: result.analysisJobId,
+        ...analysisResult,
+        id: analysisResult.analysisJobId,
+        jobId: analysisResult.analysisJobId,
+        partitionKey: analysisResult.analysisJobId,
         updatedAt: now
       });
     }
@@ -303,7 +307,7 @@ const routes = {
     json(context, 200, {
       analysisJobId,
       runId,
-      status: 'queued',
+      status: analysisResult?.status || 'queued',
       startedAt: now,
       estimatedDurationSeconds
     });

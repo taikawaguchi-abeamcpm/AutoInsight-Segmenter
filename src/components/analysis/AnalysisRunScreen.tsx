@@ -220,10 +220,10 @@ export const AnalysisRunScreen = ({
           <p>分析対象と実行条件を確認して実験を開始します。</p>
         </div>
         <div className="actions">
-          <Button variant="secondary" onClick={onBack}>マッピングへ戻る</Button>
+          <Button variant="secondary" onClick={onBack}>意味付けへ戻る</Button>
           <Button variant="secondary"><Save size={16} /> 下書き保存</Button>
           <Button onClick={start} disabled={submitting || validation?.valid === false}>
-            <Play size={16} /> 分析を開始
+            <Play size={16} /> 実験を開始
           </Button>
         </div>
       </header>
