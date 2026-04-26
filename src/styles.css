@@ -423,6 +423,29 @@ textarea {
   resize: vertical;
 }
 
+.category-value-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.category-value-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) minmax(160px, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.category-value-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.category-value-row strong,
+.category-value-row small {
+  overflow-wrap: anywhere;
+}
+
 .join-editor-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

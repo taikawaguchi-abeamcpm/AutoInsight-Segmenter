@@ -8,6 +8,13 @@ export interface MappingBootstrap {
   mapping: SemanticMappingDocument;
 }
 
+export interface CategoryValueList {
+  tableId: string;
+  columnId: string;
+  values: Array<{ value: string; count: number }>;
+  truncated: boolean;
+}
+
 const NON_BUSINESS_FIELD_NAMES = new Set(['items', 'endCursor', 'hasNextPage', 'groupBy', 'nodes', 'edges', 'pageInfo', 'totalCount']);
 const VALID_COLUMN_ROLES = new Set(['customer_id', 'event_time', 'target', 'feature', 'excluded']);
 
@@ -141,6 +148,27 @@ export const mappingApi = {
       version: mapping.version + 1,
       updatedAt: nowIso(),
       updatedBy: 'demo.user'
+    };
+  },
+
+  async getCategoryValues(dataset: FabricDataset, tableId: string, columnId: string, options: RequestOptions = {}): Promise<CategoryValueList> {
+    const response = await apiRequest<CategoryValueList>('/mappings/category-values', {
+      method: 'POST',
+      body: JSON.stringify({ dataset, tableId, columnId, limit: 200 }),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
+    await delay(120, options.signal);
+    const table = dataset.tables.find((item) => item.id === tableId);
+    const column = table?.columns.find((item) => item.id === columnId);
+    return {
+      tableId,
+      columnId,
+      values: (column?.sampleValues ?? []).map((value) => ({ value: String(value), count: 0 })),
+      truncated: false
     };
   },
 

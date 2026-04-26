@@ -184,6 +184,41 @@ const inferTargetPositiveValueFromData = async ({ connection, req, mapping, data
   }
 };
 
+const fetchDistinctColumnValues = async ({ connection, req, dataset, tableId, columnId, limit = 200 }) => {
+  const table = dataset.tables.find((item) => item.id === tableId);
+  const column = table?.columns.find((item) => item.id === columnId);
+  if (!table || !column) {
+    throw Object.assign(new Error('カテゴリ値を取得する列が見つかりません。'), {
+      status: 400,
+      code: 'MAPPING.COLUMN_NOT_FOUND'
+    });
+  }
+
+  const { rows, truncated } = await fetchTableRows(connection, req, table.name, [column.name], {
+    pageSize: 1000,
+    maxRows: Number(process.env.FABRIC_CATEGORY_VALUE_MAX_ROWS || 5000)
+  });
+  const counts = new Map();
+  rows.forEach((row) => {
+    const value = row[column.name];
+    if (value === null || value === undefined || value === '') return;
+    const key = String(value);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  const values = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'ja-JP'))
+    .slice(0, limit)
+    .map(([value, count]) => ({ value, count }));
+
+  return {
+    tableId,
+    columnId,
+    values,
+    truncated: truncated || counts.size > values.length
+  };
+};
+
 const computedConnectionId = (draft) =>
   `fabric-conn-${makeHash({ endpointUrl: draft.endpointUrl?.trim(), tenantId: draft.tenantId?.trim() })}`;
 
@@ -396,6 +431,22 @@ const routes = {
     });
 
     json(context, 200, saved);
+  },
+
+  'POST mappings/category-values': async (req, context) => {
+    const { dataset, tableId, columnId, limit } = readBody(req);
+    if (!dataset || !tableId || !columnId) {
+      error(context, 400, 'MAPPING.CATEGORY_VALUES_INPUT_REQUIRED', 'カテゴリ値の取得にはdataset、tableId、columnIdが必要です。');
+      return;
+    }
+
+    const connection = await resolveConnectionForDataset(dataset.id);
+    if (!connection) {
+      error(context, 400, 'FABRIC.NO_ACTIVE_CONNECTION', 'カテゴリ値の取得には有効なFabric接続が必要です。');
+      return;
+    }
+
+    json(context, 200, await fetchDistinctColumnValues({ connection, req, dataset, tableId, columnId, limit }));
   },
 
   'POST analysis/start': async (req, context) => {

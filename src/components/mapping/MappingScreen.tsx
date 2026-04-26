@@ -1,7 +1,7 @@
 import { Database, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { isAbortError } from '../../services/client';
-import { mappingApi } from '../../services/mapping/mappingApi';
+import { mappingApi, type CategoryValueList } from '../../services/mapping/mappingApi';
 import type { SelectedDatasetContext } from '../../types/dataset';
 import type {
   ColumnSemanticMapping,
@@ -75,6 +75,11 @@ const parseValueLabels = (text: string) =>
       .filter(([value]) => value.length > 0)
   );
 
+const withCategoryValues = (current: ColumnSemanticMapping, values: Array<{ value: string }>) => ({
+  ...(current.featureConfig?.valueLabels ?? {}),
+  ...Object.fromEntries(values.map(({ value }) => [String(value), current.featureConfig?.valueLabels?.[String(value)] ?? String(value)]))
+});
+
 const defaultTableMapping = (table: FabricTable): TableSemanticMapping => ({
   tableId: table.id,
   entityRole: 'dimension',
@@ -142,6 +147,8 @@ export const MappingScreen = ({
   const [showOnlyUnmapped, setShowOnlyUnmapped] = useState(false);
   const [activeTab, setActiveTab] = useState<MappingTab>('tables');
   const [saving, setSaving] = useState(false);
+  const [categoryValuesByColumn, setCategoryValuesByColumn] = useState<Record<string, CategoryValueList>>({});
+  const [categoryValueLoadingKey, setCategoryValueLoadingKey] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -390,6 +397,59 @@ export const MappingScreen = ({
   const warningCount = mapping?.validationIssues.filter((issue) => issue.severity === 'warning').length ?? 0;
   const errorCount = mapping?.validationIssues.filter((issue) => issue.severity === 'error').length ?? 0;
 
+  useEffect(() => {
+    if (
+      !fabricDataset ||
+      !mapping ||
+      !selectedColumn ||
+      !selectedColumnTable ||
+      selectedColumnMapping?.columnRole !== 'feature' ||
+      selectedColumnMapping.featureConfig?.valueType !== 'categorical'
+    ) {
+      return;
+    }
+
+    if (categoryValuesByColumn[selectedColumn.id]) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const columnId = selectedColumn.id;
+    setCategoryValueLoadingKey(columnId);
+    mappingApi
+      .getCategoryValues(fabricDataset, selectedColumnTable.id, columnId, { signal: controller.signal })
+      .then((result) => {
+        setCategoryValuesByColumn((current) => ({ ...current, [columnId]: result }));
+        setMapping((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            columnMappings: current.columnMappings.map((item) =>
+              item.columnId === columnId && item.columnRole === 'feature' && item.featureConfig?.valueType === 'categorical'
+                ? {
+                    ...item,
+                    featureConfig: {
+                      ...item.featureConfig,
+                      valueLabels: withCategoryValues(item, result.values)
+                    }
+                  }
+                : item
+            )
+          };
+        });
+      })
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) {
+          setCategoryValuesByColumn((current) => ({ ...current, [columnId]: { tableId: selectedColumnTable.id, columnId, values: [], truncated: false } }));
+        }
+      })
+      .finally(() => {
+        setCategoryValueLoadingKey((current) => (current === columnId ? null : current));
+      });
+
+    return () => controller.abort();
+  }, [categoryValuesByColumn, fabricDataset, mapping, selectedColumn, selectedColumnMapping, selectedColumnTable]);
+
   if (!fabricDataset || !mapping) {
     return (
       <div className="screen">
@@ -580,19 +640,51 @@ export const MappingScreen = ({
                       </Field>
                       {(selectedColumnMapping.featureConfig.valueType ?? fallbackFeatureValueType(selectedColumn)) === 'categorical' ? (
                         <Field label="カテゴリ値の名称">
-                          <textarea
-                            rows={5}
-                            value={formatValueLabels(selectedColumnMapping.featureConfig.valueLabels)}
-                            onChange={(event) =>
-                              upsertColumnMapping(selectedColumnTable, selectedColumn, {
-                                featureConfig: {
-                                  ...selectedColumnMapping.featureConfig!,
-                                  valueLabels: parseValueLabels(event.target.value)
+                          <div className="category-value-editor">
+                            {categoryValueLoadingKey === selectedColumn.id ? <p className="subtle-text">実データの値を読み込んでいます。</p> : null}
+                            {(categoryValuesByColumn[selectedColumn.id]?.values.length
+                              ? categoryValuesByColumn[selectedColumn.id].values
+                              : Object.keys(selectedColumnMapping.featureConfig.valueLabels ?? {}).map((value) => ({ value, count: 0 }))
+                            ).map(({ value, count }) => (
+                              <label className="category-value-row" key={value}>
+                                <span>
+                                  <strong>{value}</strong>
+                                  <small>{count > 0 ? `${formatNumber(count)} 件` : '既存設定'}</small>
+                                </span>
+                                <input
+                                  value={selectedColumnMapping.featureConfig?.valueLabels?.[String(value)] ?? ''}
+                                  onChange={(event) =>
+                                    upsertColumnMapping(selectedColumnTable, selectedColumn, {
+                                      featureConfig: {
+                                        ...selectedColumnMapping.featureConfig!,
+                                        valueLabels: {
+                                          ...(selectedColumnMapping.featureConfig?.valueLabels ?? {}),
+                                          [String(value)]: event.target.value
+                                        }
+                                      }
+                                    })
+                                  }
+                                  placeholder={String(value)}
+                                />
+                              </label>
+                            ))}
+                            {categoryValuesByColumn[selectedColumn.id]?.truncated ? <p className="subtle-text">件数の多い値から最大 200 件を表示しています。</p> : null}
+                            {!categoryValueLoadingKey && !categoryValuesByColumn[selectedColumn.id]?.values.length && !Object.keys(selectedColumnMapping.featureConfig.valueLabels ?? {}).length ? (
+                              <textarea
+                                rows={4}
+                                value={formatValueLabels(selectedColumnMapping.featureConfig.valueLabels)}
+                                onChange={(event) =>
+                                  upsertColumnMapping(selectedColumnTable, selectedColumn, {
+                                    featureConfig: {
+                                      ...selectedColumnMapping.featureConfig!,
+                                      valueLabels: parseValueLabels(event.target.value)
+                                    }
+                                  })
                                 }
-                              })
-                            }
-                            placeholder="例:&#10;1=訪問&#10;2=電話&#10;3=メール"
-                          />
+                                placeholder="例:&#10;1=訪問&#10;2=電話&#10;3=メール"
+                              />
+                            ) : null}
+                          </div>
                         </Field>
                       ) : null}
                     </>
