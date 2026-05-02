@@ -19,6 +19,19 @@ from autoinsight_analysis.worker import build_real_analysis_result
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 
+@app.route(route="analysis/health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def health(_req: func.HttpRequest) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps({
+            "status": "ok",
+            "runtime": "python",
+            "worker": "autoinsight-analysis",
+        }),
+        status_code=200,
+        mimetype="application/json",
+    )
+
+
 @app.route(route="analysis/run", methods=["POST"])
 def run_analysis(req: func.HttpRequest) -> func.HttpResponse:
     try:

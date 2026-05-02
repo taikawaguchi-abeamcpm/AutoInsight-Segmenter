@@ -24,6 +24,82 @@ const pythonCandidates = () => {
 const analysisError = (message, code, status = 500) =>
   Object.assign(new Error(message), { code, status });
 
+const workerUrlSummary = () => {
+  try {
+    const url = new URL(WORKER_URL);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return 'invalid ANALYSIS_WORKER_URL';
+  }
+};
+
+const workerHealthUrl = () => {
+  const url = new URL(WORKER_URL);
+  if (url.pathname.endsWith('/analysis/run')) {
+    url.pathname = url.pathname.replace(/\/analysis\/run$/, '/analysis/health');
+  } else {
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/health`;
+  }
+  url.search = '';
+  return url.toString();
+};
+
+const getAnalysisWorkerStatus = async () => {
+  if (!WORKER_URL) {
+    return {
+      configured: false,
+      reachable: false,
+      hasKey: Boolean(WORKER_KEY),
+      message: 'ANALYSIS_WORKER_URL is not configured.'
+    };
+  }
+
+  let summary;
+  let healthUrl;
+  try {
+    summary = workerUrlSummary();
+    healthUrl = workerHealthUrl();
+  } catch (err) {
+    return {
+      configured: true,
+      reachable: false,
+      hasKey: Boolean(WORKER_KEY),
+      workerUrl: WORKER_URL,
+      message: `ANALYSIS_WORKER_URL is invalid. ${err.message}`
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(healthUrl, { method: 'GET', signal: controller.signal });
+    const contentType = response.headers.get('content-type') || '';
+    const body = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : await response.text().catch(() => '');
+    return {
+      configured: true,
+      reachable: response.ok,
+      hasKey: Boolean(WORKER_KEY),
+      workerUrl: summary,
+      healthUrl,
+      status: response.status,
+      body
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      reachable: false,
+      hasKey: Boolean(WORKER_KEY),
+      workerUrl: summary,
+      healthUrl,
+      message: err.name === 'AbortError' ? 'Health check timed out.' : err.message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const runRemotePythonWorker = async (payload) => {
   if (!WORKER_URL) {
     throw analysisError(
@@ -66,7 +142,7 @@ const runRemotePythonWorker = async (payload) => {
     }
     if (!err.code || !err.code.startsWith?.('ANALYSIS.')) {
       throw analysisError(
-        `Python analysis worker is unreachable. ${err.message}`,
+        `Python analysis worker is unreachable at ${workerUrlSummary()}. ${err.message}`,
         'ANALYSIS.WORKER_UNREACHABLE',
         502
       );
@@ -184,5 +260,6 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
 };
 
 module.exports = {
-  buildRealAnalysisResult
+  buildRealAnalysisResult,
+  getAnalysisWorkerStatus
 };

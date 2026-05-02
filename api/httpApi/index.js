@@ -1,6 +1,6 @@
 const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
-const { buildRealAnalysisResult } = require('../src/analysisEngine');
+const { buildRealAnalysisResult, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 
 const actor = 'system';
@@ -27,6 +27,35 @@ const error = (context, status, code, message, targetPath) => {
     targetPath,
     correlationId: correlationId()
   });
+};
+
+const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, message, detail }) => {
+  const timestamp = nowIso();
+  return {
+    id: analysisJobId,
+    analysisJobId,
+    runId,
+    datasetId: dataset?.id || mapping?.datasetId || 'unknown',
+    mappingDocumentId: mapping?.id || 'unknown',
+    mode: config?.mode || 'custom',
+    status: 'failed',
+    progressPercent: 100,
+    message,
+    detail,
+    createdAt: timestamp,
+    startedAt: timestamp,
+    completedAt: timestamp,
+    summary: {
+      analyzedRowCount: 0,
+      topFeatureCount: 0,
+      validPatternCount: 0,
+      recommendedSegmentCount: 0
+    },
+    featureImportances: [],
+    interactionPairs: [],
+    goldenPatterns: [],
+    segmentRecommendations: []
+  };
 };
 
 const readBody = (req) => {
@@ -303,6 +332,10 @@ const routes = {
     });
   },
 
+  'GET analysis/worker-health': async (_req, context) => {
+    json(context, 200, await getAnalysisWorkerStatus());
+  },
+
   'GET fabric-connections': async (_req, context) => {
     json(context, 200, await listConnections());
   },
@@ -487,7 +520,22 @@ const routes = {
 
     await upsert('analysisRuns', analysisRun);
 
-    const analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+    let analysisResult;
+    try {
+      analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
+    } catch (err) {
+      context.log.error('Python analysis worker failed', err);
+      analysisResult = failedAnalysisResult({
+        analysisJobId,
+        runId,
+        mapping: resolvedMapping,
+        dataset: resolvedDataset,
+        config,
+        message: err.message || 'Python analysis worker failed.',
+        detail: err.code ? `${err.code}${err.status ? ` (${err.status})` : ''}` : undefined
+      });
+    }
+
     await upsert('analysisResults', {
       ...analysisResult,
       id: analysisResult.analysisJobId,
@@ -507,7 +555,7 @@ const routes = {
     json(context, 200, {
       analysisJobId,
       runId,
-      status: analysisResult?.status || 'queued',
+      status: analysisResult?.status || 'failed',
       startedAt: now,
       estimatedDurationSeconds
     });

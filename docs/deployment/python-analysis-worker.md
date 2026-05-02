@@ -22,6 +22,12 @@ The deployed HTTP endpoint is:
 https://<python-function-app>.azurewebsites.net/api/analysis/run
 ```
 
+The health endpoint is anonymous and can be used to verify reachability:
+
+```text
+https://<python-function-app>.azurewebsites.net/api/analysis/health
+```
+
 ## GitHub Secrets
 
 Set these repository secrets to deploy the Python worker from CI with Azure Login / OIDC:
@@ -121,6 +127,51 @@ ANALYSIS_WORKER_KEY=<function-key>
 ```
 
 For local development, you can omit `ANALYSIS_WORKER_URL`; the Node API will run `analysis-worker/run_analysis.py` directly with the local Python executable.
+
+For the current `autoinsight` Function App in Japan East, the URL should use the app's default domain:
+
+```text
+ANALYSIS_WORKER_URL=https://autoinsight-d7e5dgd7f7bxdzfj.japaneast-01.azurewebsites.net/api/analysis/run
+```
+
+Before testing from AutoInsight, open this URL in a browser:
+
+```text
+https://autoinsight-d7e5dgd7f7bxdzfj.japaneast-01.azurewebsites.net/api/analysis/health
+```
+
+Expected response:
+
+```json
+{"status":"ok","runtime":"python","worker":"autoinsight-analysis"}
+```
+
+If the browser cannot open the health URL, fix the Function App deployment, networking, or public access before testing the Static Web App. If the health URL works but `/api/analysis/start` still fails, verify `ANALYSIS_WORKER_URL` and `ANALYSIS_WORKER_KEY` in the Static Web App application settings, then restart or redeploy the Static Web App API.
+
+You can also verify the same reachability from the Static Web Apps managed API:
+
+```text
+https://<static-web-app-domain>/api/analysis/worker-health
+```
+
+For the current Static Web App:
+
+```text
+https://wonderful-water-048492b00.7.azurestaticapps.net/api/analysis/worker-health
+```
+
+Expected response:
+
+```json
+{
+  "configured": true,
+  "reachable": true,
+  "hasKey": true,
+  "status": 200
+}
+```
+
+If `configured` is `false`, set `ANALYSIS_WORKER_URL` on the Static Web App. If `reachable` is `false`, check the returned `healthUrl` and `message`, then verify Function App public access/networking.
 
 ## Failure Behavior
 
