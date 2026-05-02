@@ -1,7 +1,10 @@
 const { spawn } = require('node:child_process');
+const { existsSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 
 const WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_WORKER_TIMEOUT_MS || 15 * 60 * 1000);
+const WORKER_URL = process.env.ANALYSIS_WORKER_URL;
+const WORKER_KEY = process.env.ANALYSIS_WORKER_KEY;
 
 const reqHeader = (req, name) =>
   req.headers?.[name] || req.headers?.[name.toLowerCase()] || req.headers?.[name.toUpperCase()];
@@ -18,9 +21,73 @@ const pythonCandidates = () => {
   ];
 };
 
-const runWorkerCandidate = (candidate, payload) =>
+const analysisError = (message, code, status = 500) =>
+  Object.assign(new Error(message), { code, status });
+
+const runRemotePythonWorker = async (payload) => {
+  if (!WORKER_URL) {
+    throw analysisError(
+      'ANALYSIS_WORKER_URL is not configured. Deploy the Python analysis Function App and set this value in the Node API app settings.',
+      'ANALYSIS.WORKER_URL_NOT_CONFIGURED'
+    );
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(WORKER_KEY ? { 'x-functions-key': WORKER_KEY } : {})
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const body = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : await response.text().catch(() => '');
+
+    if (!response.ok) {
+      const message = body?.message || body?.error || body || response.statusText || 'Python analysis worker request failed.';
+      throw analysisError(message, 'ANALYSIS.WORKER_HTTP_FAILED', response.status || 502);
+    }
+
+    if (!body || typeof body !== 'object') {
+      throw analysisError('Python analysis worker returned invalid JSON.', 'ANALYSIS.WORKER_INVALID_OUTPUT');
+    }
+
+    return body;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw analysisError('Python analysis worker timed out.', 'ANALYSIS.WORKER_TIMEOUT', 504);
+    }
+    if (!err.code || !err.code.startsWith?.('ANALYSIS.')) {
+      throw analysisError(
+        `Python analysis worker is unreachable. ${err.message}`,
+        'ANALYSIS.WORKER_UNREACHABLE',
+        502
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const runLocalPythonWorkerCandidate = (candidate, payload) =>
   new Promise((resolvePromise, rejectPromise) => {
     const scriptPath = resolve(__dirname, '..', '..', 'analysis-worker', 'run_analysis.py');
+    if (!existsSync(scriptPath)) {
+      rejectPromise(analysisError(
+        `Python analysis worker was not found at ${scriptPath}.`,
+        'ANALYSIS.WORKER_NOT_DEPLOYED'
+      ));
+      return;
+    }
+
     const child = spawn(candidate.command, [...candidate.args, scriptPath], {
       cwd: join(__dirname, '..', '..'),
       env: {
@@ -37,10 +104,7 @@ const runWorkerCandidate = (candidate, payload) =>
       if (settled) return;
       settled = true;
       child.kill('SIGTERM');
-      rejectPromise(Object.assign(new Error('Python analysis worker timed out.'), {
-        status: 504,
-        code: 'ANALYSIS.WORKER_TIMEOUT'
-      }));
+      rejectPromise(analysisError('Python analysis worker timed out.', 'ANALYSIS.WORKER_TIMEOUT', 504));
     }, WORKER_TIMEOUT_MS);
 
     child.stdout.setEncoding('utf8');
@@ -63,31 +127,31 @@ const runWorkerCandidate = (candidate, payload) =>
       settled = true;
 
       if (code !== 0) {
-        rejectPromise(Object.assign(new Error(stderr.trim() || `Python analysis worker exited with code ${code}.`), {
-          status: 500,
-          code: 'ANALYSIS.WORKER_FAILED'
-        }));
+        rejectPromise(analysisError(
+          stderr.trim() || `Python analysis worker exited with code ${code}.`,
+          'ANALYSIS.WORKER_FAILED'
+        ));
         return;
       }
 
       try {
         resolvePromise(JSON.parse(stdout));
       } catch (err) {
-        rejectPromise(Object.assign(new Error(`Python analysis worker returned invalid JSON. ${err.message}`), {
-          status: 500,
-          code: 'ANALYSIS.WORKER_INVALID_OUTPUT'
-        }));
+        rejectPromise(analysisError(
+          `Python analysis worker returned invalid JSON. ${err.message}`,
+          'ANALYSIS.WORKER_INVALID_OUTPUT'
+        ));
       }
     });
 
     child.stdin.end(JSON.stringify(payload));
   });
 
-const runPythonAnalysis = async (payload) => {
+const runLocalPythonWorker = async (payload) => {
   const errors = [];
   for (const candidate of pythonCandidates()) {
     try {
-      return await runWorkerCandidate(candidate, payload);
+      return await runLocalPythonWorkerCandidate(candidate, payload);
     } catch (err) {
       if (err.code === 'ENOENT') {
         errors.push(`${candidate.command}: not found`);
@@ -97,14 +161,14 @@ const runPythonAnalysis = async (payload) => {
     }
   }
 
-  throw Object.assign(new Error(`Python executable was not found. Tried: ${errors.join(', ')}`), {
-    status: 500,
-    code: 'ANALYSIS.PYTHON_NOT_FOUND'
-  });
+  throw analysisError(
+    `Python executable was not found. Tried: ${errors.join(', ')}`,
+    'ANALYSIS.PYTHON_NOT_FOUND'
+  );
 };
 
-const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, mapping, dataset, config }) =>
-  runPythonAnalysis({
+const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, mapping, dataset, config }) => {
+  const payload = {
     analysisJobId,
     runId,
     connection,
@@ -114,7 +178,10 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
     mapping,
     dataset,
     config
-  });
+  };
+
+  return WORKER_URL ? runRemotePythonWorker(payload) : runLocalPythonWorker(payload);
+};
 
 module.exports = {
   buildRealAnalysisResult

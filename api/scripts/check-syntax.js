@@ -26,7 +26,8 @@ for (const file of files) {
 
 const pythonFiles = [
   join(__dirname, '..', '..', 'analysis-worker', 'run_analysis.py'),
-  join(__dirname, '..', '..', 'analysis-worker', 'autoinsight_analysis', 'worker.py')
+  join(__dirname, '..', '..', 'analysis-worker', 'autoinsight_analysis', 'worker.py'),
+  join(__dirname, '..', '..', 'analysis-function', 'function_app.py')
 ];
 const pythonResult = spawnSync('python', ['-m', 'py_compile', ...pythonFiles], { stdio: 'inherit' });
 if (pythonResult.error) {

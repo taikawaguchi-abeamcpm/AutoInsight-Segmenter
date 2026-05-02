@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "FABRIC_GRAPHQL_TIMEOUT_MS": "30000",
+    "FABRIC_ANALYSIS_PAGE_SIZE": "1000",
+    "FABRIC_ANALYSIS_MAX_ROWS": "100000"
+  }
+}
