@@ -27,7 +27,8 @@ export const createDefaultConfig = (summary: AnalysisInputSummary, mode: Analysi
       businessPriority: 'segmentability',
       excludeHighMissingColumns: true,
       excludeHighCardinalityColumns: true,
-      blockedColumnKeys: []
+      blockedColumnKeys: [],
+      segmentObjective: 'unconverted_targeting'
     } satisfies AutopilotAnalysisConfig;
   }
 
@@ -42,7 +43,8 @@ export const createDefaultConfig = (summary: AnalysisInputSummary, mode: Analysi
     correlationThreshold: 0.9,
     importanceMethod: 'hybrid',
     patternCount: 10,
-    selectedFeatureKeys: featureKeys
+    selectedFeatureKeys: featureKeys,
+    segmentObjective: 'unconverted_targeting'
   } satisfies CustomAnalysisConfig;
 };
 

@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from itertools import combinations
 from typing import Any
 
 
@@ -303,25 +304,97 @@ def label_for_value(feature: dict[str, Any], value: Any) -> str:
     return str((feature.get("valueLabels") or {}).get(str(value), value))
 
 
+def config_blocked_keys(config: dict[str, Any] | None) -> set[str]:
+    if not config:
+        return set()
+    return {str(item) for item in config.get("blockedColumnKeys", []) if item is not None}
+
+
+def normalize_identifier(value: Any) -> str:
+    return "".join(char for char in str(value or "").strip().lower() if char.isalnum())
+
+
+def time_window_to_millis(window: dict[str, Any] | None) -> float | None:
+    if not window:
+        return None
+    value = to_number(window.get("value"))
+    if value is None or value <= 0:
+        return None
+    unit = str(window.get("unit") or "day").lower()
+    days = value * 7 if unit == "week" else value * 30 if unit == "month" else value
+    return days * 24 * 60 * 60 * 1000
+
+
+def is_leakage_like_feature(
+    mapped_column: dict[str, Any],
+    feature_config: dict[str, Any],
+    item: dict[str, Any],
+    target: dict[str, Any],
+    target_config: dict[str, Any],
+) -> bool:
+    if mapped_column.get("columnId") == target["column"].get("id"):
+        return True
+
+    target_terms = [
+        target["column"].get("name"),
+        target["column"].get("displayName"),
+        target_config.get("targetKey"),
+        target_config.get("label"),
+    ]
+    target_tokens = {normalize_identifier(term) for term in target_terms if normalize_identifier(term)}
+    feature_terms = [
+        item["column"].get("name"),
+        item["column"].get("displayName"),
+        mapped_column.get("businessName"),
+        feature_config.get("featureKey"),
+        feature_config.get("label"),
+    ]
+    feature_tokens = {normalize_identifier(term) for term in feature_terms if normalize_identifier(term)}
+
+    for token in feature_tokens:
+        if token in target_tokens:
+            return True
+        if any(len(target_token) >= 4 and target_token in token for target_token in target_tokens):
+            return True
+
+    text = " ".join(str(term or "").lower() for term in feature_terms)
+    post_outcome_terms = (
+        "converted", "conversion", "outcome", "result", "won", "lost", "closed",
+        "contract_date", "close_date", "cancelled", "canceled", "churned",
+        "success", "failure", "成約", "受注", "失注", "契約日", "解約", "結果",
+    )
+    return any(term in text for term in post_outcome_terms)
+
+
 def build_feature_descriptors(
     mapping: dict[str, Any],
     dataset: dict[str, Any],
     target: dict[str, Any],
+    target_config: dict[str, Any],
     config: dict[str, Any] | None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     columns = column_id_map(dataset)
     table_mapping_by_id = {table["tableId"]: table for table in mapping.get("tableMappings", [])}
     selected_keys = set(config.get("selectedFeatureKeys", [])) if config and config.get("mode") == "custom" else None
+    blocked_keys = config_blocked_keys(config)
     features: list[dict[str, Any]] = []
 
     for mapped_column in mapping.get("columnMappings", []):
         feature_config = mapped_column.get("featureConfig") or {}
         if mapped_column.get("columnRole") != "feature" or not feature_config.get("enabled"):
             continue
+        feature_key = feature_config.get("featureKey")
+        if str(feature_key) in blocked_keys or str(mapped_column.get("columnId")) in blocked_keys:
+            continue
         if selected_keys is not None and feature_config.get("featureKey") not in selected_keys:
             continue
         item = columns.get(mapped_column.get("columnId"))
         if not item:
+            continue
+        if is_leakage_like_feature(mapped_column, feature_config, item, target, target_config):
+            if diagnostics is not None:
+                diagnostics.setdefault("autoBlockedFeatureKeys", []).append(str(feature_key or mapped_column.get("columnId")))
             continue
         plan = find_feature_plan(mapping, dataset, target["table"]["id"], item["table"]["id"])
         if not plan:
@@ -329,7 +402,7 @@ def build_feature_descriptors(
         table_mapping = table_mapping_by_id.get(item["table"]["id"]) or {}
         data_type = item["column"].get("dataType")
         features.append({
-            "featureKey": feature_config.get("featureKey"),
+            "featureKey": feature_key,
             "label": feature_config.get("label") or mapped_column.get("businessName"),
             "sourceColumnName": item["column"].get("name"),
             "sourceColumnId": item["column"].get("id"),
@@ -342,6 +415,7 @@ def build_feature_descriptors(
             "entityRole": table_mapping.get("entityRole"),
             "category": category_for_entity_role(table_mapping.get("entityRole"), item["table"].get("name", "")),
             "aggregation": feature_config.get("aggregation"),
+            "timeWindow": feature_config.get("timeWindow"),
             "plan": plan,
         })
     return features
@@ -357,6 +431,89 @@ def resolve_event_time_columns_by_table(mapping: dict[str, Any], dataset: dict[s
         if item:
             by_table[mapped_column["tableId"]] = item["column"]
     return by_table
+
+
+def resolve_target_event_time_column(
+    mapping: dict[str, Any],
+    dataset: dict[str, Any],
+    target: dict[str, Any],
+    target_config: dict[str, Any],
+) -> dict[str, Any] | None:
+    columns = column_id_map(dataset)
+    configured = columns.get(target_config.get("eventTimeColumnId"))
+    if configured:
+        return configured["column"]
+    for mapped_column in mapping.get("columnMappings", []):
+        if mapped_column.get("tableId") != target["table"]["id"] or mapped_column.get("columnRole") != "event_time":
+            continue
+        item = columns.get(mapped_column.get("columnId"))
+        if item:
+            return item["column"]
+    return None
+
+
+def filter_time_safe_features(
+    features: list[dict[str, Any]],
+    target_event_time_column: dict[str, Any] | None,
+    event_time_columns_by_table: dict[str, dict[str, Any]],
+    diagnostics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    safe_features = []
+    for feature in features:
+        has_time_window = bool(feature.get("timeWindow"))
+        source_has_event_time = feature.get("sourceTableId") in event_time_columns_by_table
+        time_sensitive = (
+            has_time_window
+            or is_sequence_mining_feature(feature, event_time_columns_by_table)
+            or feature.get("category") in {"behavior", "transaction", "engagement"}
+        )
+        if has_time_window and not source_has_event_time:
+            diagnostics.setdefault("timeUnsafeFeatureKeys", []).append(feature["featureKey"])
+            continue
+        if time_sensitive and source_has_event_time and not target_event_time_column:
+            diagnostics.setdefault("timeUnsafeFeatureKeys", []).append(feature["featureKey"])
+            continue
+        safe_features.append(feature)
+    return safe_features
+
+
+def resolve_analysis_unit_key_column(
+    mapping: dict[str, Any],
+    dataset: dict[str, Any],
+    target: dict[str, Any],
+) -> dict[str, Any] | None:
+    columns = column_id_map(dataset)
+    target_table_id = target["table"]["id"]
+
+    for mapped_column in mapping.get("columnMappings", []):
+        if mapped_column.get("tableId") == target_table_id and mapped_column.get("columnRole") == "customer_id":
+            item = columns.get(mapped_column.get("columnId"))
+            if item:
+                return item["column"]
+
+    target_table_mapping = next(
+        (item for item in mapping.get("tableMappings", []) if item.get("tableId") == target_table_id),
+        None,
+    )
+    if target_table_mapping and target_table_mapping.get("entityRole") == "customer_master":
+        for column_id in [target_table_mapping.get("primaryKeyColumnId"), target_table_mapping.get("customerJoinColumnId")]:
+            item = columns.get(column_id)
+            if item:
+                return item["column"]
+
+    customer_tables = [
+        item for item in mapping.get("tableMappings", [])
+        if item.get("entityRole") == "customer_master" and item.get("tableId")
+    ]
+    for customer_table in customer_tables:
+        direct = edge_between(mapping, target_table_id, customer_table["tableId"])
+        if not direct:
+            continue
+        item = columns.get(direct.get("leftColumnId"))
+        if item:
+            return item["column"]
+
+    return None
 
 
 def is_sequence_mining_feature(feature: dict[str, Any], event_time_columns_by_table: dict[str, Any]) -> bool:
@@ -403,6 +560,36 @@ def aggregate_values(values: list[Any], feature: dict[str, Any]) -> Any:
     return raw_values[-1] if aggregation in {"latest", "none"} else mode(raw_values)
 
 
+def filter_values_for_target_time(
+    values: list[dict[str, Any]],
+    feature: dict[str, Any],
+    target_at: float | None,
+    diagnostics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    window_ms = time_window_to_millis(feature.get("timeWindow"))
+    if not values:
+        return []
+
+    filtered = []
+    for item in values:
+        at = item.get("at")
+        if at is not None:
+            if target_at is None:
+                diagnostics["futureFeatureValueCount"] = diagnostics.get("futureFeatureValueCount", 0) + 1
+                continue
+            if at > target_at:
+                diagnostics["futureFeatureValueCount"] = diagnostics.get("futureFeatureValueCount", 0) + 1
+                continue
+            if window_ms is not None and at < target_at - window_ms:
+                diagnostics["outsideWindowFeatureValueCount"] = diagnostics.get("outsideWindowFeatureValueCount", 0) + 1
+                continue
+        elif window_ms is not None:
+            diagnostics["outsideWindowFeatureValueCount"] = diagnostics.get("outsideWindowFeatureValueCount", 0) + 1
+            continue
+        filtered.append(item)
+    return filtered
+
+
 def materialize_analysis_rows(
     connection: dict[str, Any],
     auth: dict[str, Any],
@@ -411,12 +598,18 @@ def materialize_analysis_rows(
     target_config: dict[str, Any],
     features: list[dict[str, Any]],
     event_time_columns_by_table: dict[str, dict[str, Any]],
+    analysis_unit_key_column: dict[str, Any] | None = None,
+    target_event_time_column: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    diagnostics = diagnostics if diagnostics is not None else {}
     columns = column_id_map(dataset)
     target_key_column_ids = [feature["plan"].get("targetKeyColumnId") for feature in features if feature["plan"].get("targetKeyColumnId")]
     same_table_columns = [feature["sourceColumnName"] for feature in features if feature["plan"]["kind"] == "same"]
     target_key_columns = [columns[column_id]["column"]["name"] for column_id in target_key_column_ids if column_id in columns]
-    target_fetch_columns = [target["column"]["name"], *target_key_columns, *same_table_columns]
+    analysis_unit_key_name = (analysis_unit_key_column or {}).get("name")
+    target_event_time_name = (target_event_time_column or {}).get("name")
+    target_fetch_columns = [target["column"]["name"], analysis_unit_key_name, target_event_time_name, *target_key_columns, *same_table_columns]
     target_response = fetch_table_rows(connection, auth, target["table"]["name"], target_fetch_columns)
 
     rows = []
@@ -424,7 +617,16 @@ def materialize_analysis_rows(
         target_value = normalize_bool(raw.get(target["column"]["name"]), target_config)
         if target_value is None:
             continue
-        rows.append({"__rowId": index, "__target": target_value, "__sequences": {}, "__raw": raw})
+        unit_key = raw.get(analysis_unit_key_name) if analysis_unit_key_name else None
+        target_at = to_timestamp(raw.get(target_event_time_name)) if target_event_time_name else None
+        rows.append({
+            "__rowId": index,
+            "__unitKey": str(unit_key) if not is_missing(unit_key) else f"row-{index}",
+            "__target": target_value,
+            "__targetAt": target_at,
+            "__sequences": {},
+            "__raw": raw,
+        })
     row_by_id = {row["__rowId"]: row for row in rows}
 
     for feature in [item for item in features if item["plan"]["kind"] == "same"]:
@@ -465,15 +667,16 @@ def materialize_analysis_rows(
 
         for key, row_ids in target_rows_by_key.items():
             values = feature_values_by_key.get(key, [])
-            ordered_values = [
-                label_for_value(feature, item["value"])
-                for item in sorted(values, key=lambda item: item.get("at") if item.get("at") is not None else 0)
-                if not is_missing(item.get("value"))
-            ]
-            aggregated = aggregate_values(values, feature)
             for row_id in row_ids:
                 row = row_by_id.get(row_id)
                 if row:
+                    row_values = filter_values_for_target_time(values, feature, row.get("__targetAt"), diagnostics)
+                    ordered_values = [
+                        label_for_value(feature, item["value"])
+                        for item in sorted(row_values, key=lambda item: item.get("at") if item.get("at") is not None else 0)
+                        if not is_missing(item.get("value"))
+                    ]
+                    aggregated = aggregate_values(row_values, feature)
                     row[feature["featureKey"]] = aggregated
                     if is_sequence_mining_feature(feature, event_time_columns_by_table):
                         row["__sequences"][feature["featureKey"]] = ordered_values
@@ -482,6 +685,52 @@ def materialize_analysis_rows(
         row.pop("__raw", None)
 
     return {"rows": rows, "truncated": target_response["truncated"]}
+
+
+def collapse_rows_to_analysis_unit(rows: list[dict[str, Any]], features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get("__unitKey") or row.get("__rowId")), []).append(row)
+
+    if len(groups) == len(rows):
+        return rows
+
+    collapsed: list[dict[str, Any]] = []
+    for index, (unit_key, group_rows) in enumerate(groups.items()):
+        positive_times = [row.get("__targetAt") for row in group_rows if row["__target"] == 1 and row.get("__targetAt") is not None]
+        all_times = [row.get("__targetAt") for row in group_rows if row.get("__targetAt") is not None]
+        cutoff_at = min(positive_times) if positive_times else max(all_times) if all_times else None
+        eligible_rows = [
+            item for item in group_rows
+            if cutoff_at is None or item.get("__targetAt") is None or item.get("__targetAt") <= cutoff_at
+        ]
+        row: dict[str, Any] = {
+            "__rowId": index,
+            "__unitKey": unit_key,
+            "__target": 1 if any(item["__target"] == 1 for item in group_rows) else 0,
+            "__targetAt": cutoff_at,
+            "__sequences": {},
+        }
+        for feature in features:
+            feature_key = feature["featureKey"]
+            raw_values = [
+                {"value": item.get(feature_key), "at": item.get("__targetAt")}
+                for item in eligible_rows
+                if not is_missing(item.get(feature_key))
+            ]
+            if raw_values:
+                distinct_values = {str(item["value"]) for item in raw_values}
+                row[feature_key] = raw_values[0]["value"] if len(distinct_values) == 1 else aggregate_values(raw_values, feature)
+
+            sequences = [
+                (item.get("__sequences") or {}).get(feature_key) or []
+                for item in eligible_rows
+            ]
+            longest_sequence = max(sequences, key=len, default=[])
+            if longest_sequence:
+                row["__sequences"][feature_key] = longest_sequence
+        collapsed.append(row)
+    return collapsed
 
 
 def analyze_numeric_feature(rows: list[dict[str, Any]], feature: dict[str, Any], baseline_rate: float, min_group_count: int) -> dict[str, Any] | None:
@@ -820,6 +1069,116 @@ def build_interaction_pairs(patterns: list[dict[str, Any]], rows: list[dict[str,
     }]
 
 
+def build_golden_patterns(
+    top_importances: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    baseline_rate: float,
+    min_group_count: int,
+    pattern_count: int,
+    target_label: str,
+) -> list[dict[str, Any]]:
+    condition_entries = []
+    candidates = []
+
+    for item in top_importances:
+        pattern = item["analysis"]["pattern"]
+        if pattern["matchedCount"] < min_group_count:
+            continue
+        condition = pattern["condition"]
+        score = item["result"]["importanceScore"]
+        condition_entries.append({
+            "condition": condition,
+            "score": score,
+            "featureKey": condition["featureKey"],
+        })
+        candidates.append({
+            "conditions": [condition],
+            "matchedCount": pattern["matchedCount"],
+            "conversionRate": pattern["conversionRate"],
+            "supportRate": pattern["supportRate"],
+            "conversionDelta": pattern["conversionDelta"],
+            "lift": pattern["lift"],
+            "score": score,
+        })
+
+    for size in (2, 3):
+        for entries in combinations(condition_entries[:10], size):
+            feature_keys = [entry["featureKey"] for entry in entries]
+            if len(set(feature_keys)) != len(feature_keys):
+                continue
+            conditions = [entry["condition"] for entry in entries]
+            matched = [row for row in rows if all(matches_condition(row, condition) for condition in conditions)]
+            if len(matched) < min_group_count:
+                continue
+            conversion_rate = sum(1 for row in matched if row["__target"] == 1) / len(matched)
+            delta = conversion_rate - baseline_rate
+            if delta <= 0:
+                continue
+            support_rate = len(matched) / len(rows)
+            candidates.append({
+                "conditions": conditions,
+                "matchedCount": len(matched),
+                "conversionRate": conversion_rate,
+                "supportRate": support_rate,
+                "conversionDelta": delta,
+                "lift": conversion_rate / baseline_rate if baseline_rate > 0 else None,
+                "score": clamp_score(delta * 130 * math.sqrt(support_rate) + size * 8),
+            })
+
+    candidates.sort(
+        key=lambda item: (
+            item["conversionDelta"] > 0,
+            abs(item["conversionDelta"]) * math.sqrt(item["matchedCount"]),
+            item["score"],
+            -len(item["conditions"]),
+        ),
+        reverse=True,
+    )
+
+    patterns = []
+    seen = set()
+    for candidate in candidates:
+        signature = tuple(
+            (condition["featureKey"], condition.get("operator"), str(condition.get("value")), str(condition.get("valueTo")))
+            for condition in candidate["conditions"]
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        title = " かつ ".join(condition["label"] for condition in candidate["conditions"])
+        patterns.append({
+            "id": f"pattern-real-{len(patterns) + 1}",
+            "title": title,
+            "conditions": candidate["conditions"],
+            "supportRate": candidate["supportRate"],
+            "lift": candidate["lift"],
+            "conversionDelta": candidate["conversionDelta"],
+            "confidence": min(0.95, max(0.35, candidate["score"] / 100)),
+            "matchedCount": candidate["matchedCount"],
+            "description": (
+                f"{title} の {candidate['matchedCount']:,} 件では、{target_label} の比率が "
+                f"{format_rate(candidate['conversionRate'])} でした。全体平均 {format_rate(baseline_rate)} より "
+                f"{format_point_delta(abs(candidate['conversionDelta']))} {pattern_direction_text(candidate['conversionDelta'])}条件です。"
+            ),
+            "recommendedAction": f"{title} を条件にしたセグメントで施策検証してください。",
+        })
+        if len(patterns) >= pattern_count:
+            break
+    return patterns
+
+
+def segment_candidate_rows(rows: list[dict[str, Any]], pattern: dict[str, Any], objective: str) -> list[dict[str, Any]]:
+    matched = [
+        row for row in rows
+        if all(matches_condition(row, condition) for condition in pattern["conditions"])
+    ]
+    if objective == "all_matching":
+        return matched
+    if objective == "success_profile":
+        return [row for row in matched if row["__target"] == 1]
+    return [row for row in matched if row["__target"] != 1]
+
+
 def failed_result(
     analysis_job_id: str,
     run_id: str,
@@ -892,19 +1251,39 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
     if not target:
         return failed_result(analysis_job_id, run_id, mapping, dataset, config, "目的変数カラムが見つからないため、実データ分析を開始できませんでした。")
 
-    target = {"table": target["table"], "column": target["column"]}
-    features = build_feature_descriptors(mapping, dataset, target, config)
-    if not features:
-        return failed_result(analysis_job_id, run_id, mapping, dataset, config, "分析可能な特徴量がありません。目的変数テーブルと同一テーブル、または join 定義で接続できる特徴量を選択してください。")
-
     target_config = dict(target_mapping.get("targetConfig") or {})
     if config.get("mode") == "custom" and str(config.get("targetPositiveValue") or "").strip():
         target_config["positiveValue"] = str(config["targetPositiveValue"]).strip()
 
+    diagnostics: dict[str, Any] = {}
+    target = {"table": target["table"], "column": target["column"]}
+    features = build_feature_descriptors(mapping, dataset, target, target_config, config, diagnostics)
     event_time_columns_by_table = resolve_event_time_columns_by_table(mapping, dataset)
-    materialized = materialize_analysis_rows(connection, auth, dataset, target, target_config, features, event_time_columns_by_table)
+    target_event_time_column = resolve_target_event_time_column(mapping, dataset, target, target_config)
+    diagnostics["targetEventTimeColumn"] = (target_event_time_column or {}).get("name")
+    features = filter_time_safe_features(features, target_event_time_column, event_time_columns_by_table, diagnostics)
+    if not features:
+        return failed_result(analysis_job_id, run_id, mapping, dataset, config, "分析可能な特徴量がありません。目的変数テーブルと同一テーブル、または join 定義で接続できる特徴量を選択してください。")
+
+    analysis_unit = config.get("analysisUnit") or "customer"
+    analysis_unit_key_column = resolve_analysis_unit_key_column(mapping, dataset, target) if analysis_unit == "customer" else None
+    materialized = materialize_analysis_rows(
+        connection,
+        auth,
+        dataset,
+        target,
+        target_config,
+        features,
+        event_time_columns_by_table,
+        analysis_unit_key_column,
+        target_event_time_column,
+        diagnostics,
+    )
     rows = materialized["rows"]
     truncated = materialized["truncated"]
+    source_row_count = len(rows)
+    if analysis_unit == "customer" and analysis_unit_key_column:
+        rows = collapse_rows_to_analysis_unit(rows, features)
     if not rows:
         return failed_result(analysis_job_id, run_id, mapping, dataset, config, "目的変数を二値として判定できる行がありませんでした。目的変数の役割または正例/負例の値を確認してください。")
 
@@ -961,36 +1340,23 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
     ))
     importances.sort(key=lambda item: item["result"]["importanceScore"], reverse=True)
     top_importances = importances[: config.get("maxFeatureCount") or 20]
-    patterns = []
-    for index, item in enumerate([entry for entry in top_importances if entry["analysis"]["pattern"]["matchedCount"] >= min_group_count][: config.get("patternCount") or 5]):
-        pattern = item["analysis"]["pattern"]
-        condition = pattern["condition"]
-        patterns.append({
-            "id": f"pattern-real-{index + 1}",
-            "title": condition["label"],
-            "conditions": [condition],
-            "supportRate": pattern["supportRate"],
-            "lift": pattern["lift"],
-            "conversionDelta": pattern["conversionDelta"],
-            "confidence": min(0.95, max(0.35, item["result"]["importanceScore"] / 100)),
-            "description": (
-                f"{condition['label']} の {pattern['matchedCount']:,} 行では、{summary['target']['label']} の比率が "
-                f"{format_rate(pattern['conversionRate'])} でした。全体平均 {format_rate(baseline_rate)} より "
-                f"{format_point_delta(abs(pattern['conversionDelta']))} {pattern_direction_text(pattern['conversionDelta'])}条件です。"
-            ),
-            "recommendedAction": f"{condition['label']} を条件にしたセグメントで施策検証してください。",
-        })
+    patterns = build_golden_patterns(
+        top_importances,
+        rows,
+        baseline_rate,
+        min_group_count,
+        config.get("patternCount") or 5,
+        summary["target"]["label"],
+    )
 
     segments = []
+    segment_objective = config.get("segmentObjective") or "unconverted_targeting"
     for index, pattern in enumerate([item for item in patterns if (item.get("conversionDelta") or 0) > 0]):
-        candidate_rows = [
-            row for row in rows
-            if row["__target"] != 1 and all(matches_condition(row, condition) for condition in pattern["conditions"])
-        ]
+        candidate_rows = segment_candidate_rows(rows, pattern, segment_objective)
         segment = {
             "id": f"segment-real-{index + 1}",
-            "name": f"{pattern['conditions'][0]['label']} 未成果候補",
-            "description": "目的変数が成果値ではないデータのうち、成果データに多い傾向へ近い候補です。",
+            "name": f"{pattern['title']} 未成果候補",
+            "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
             "sourcePatternId": pattern["id"],
             "estimatedAudienceSize": len(candidate_rows),
             "estimatedConversionRate": baseline_rate + (pattern.get("conversionDelta") or 0),
@@ -1030,9 +1396,21 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
         "goldenPatterns": patterns,
         "segmentRecommendations": segments,
         "modelMetadata": {
-            key: value
-            for key, value in model_training.items()
-            if key != "featureImportances"
+            **{
+                key: value
+                for key, value in model_training.items()
+                if key != "featureImportances"
+            },
+            "analysisUnit": analysis_unit,
+            "analysisUnitKeyColumn": (analysis_unit_key_column or {}).get("name"),
+            "sourceRowCount": source_row_count,
+            "blockedFeatureCount": len(config_blocked_keys(config)),
+            "autoBlockedFeatureCount": len(diagnostics.get("autoBlockedFeatureKeys", [])),
+            "timeUnsafeFeatureCount": len(diagnostics.get("timeUnsafeFeatureKeys", [])),
+            "futureFeatureValueCount": diagnostics.get("futureFeatureValueCount", 0),
+            "outsideWindowFeatureValueCount": diagnostics.get("outsideWindowFeatureValueCount", 0),
+            "targetEventTimeColumn": diagnostics.get("targetEventTimeColumn"),
+            "segmentObjective": segment_objective,
         },
     }
 

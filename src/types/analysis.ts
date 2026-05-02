@@ -2,6 +2,7 @@ import type { ValidationIssue } from './common';
 
 export type AnalysisMode = 'custom' | 'autopilot';
 export type OptimizationPreference = 'explainability' | 'accuracy' | 'balanced';
+export type SegmentObjective = 'unconverted_targeting' | 'all_matching' | 'success_profile';
 
 export interface AnalysisInputSummary {
   datasetId: string;
@@ -35,7 +36,7 @@ export interface AnalysisFeatureSummary {
   valueType: 'categorical' | 'numeric';
   valueLabels?: Record<string, string>;
   category: 'profile' | 'behavior' | 'transaction' | 'engagement' | 'derived';
-  aggregation: 'none' | 'count' | 'sum' | 'avg' | 'latest' | 'distinct_count';
+  aggregation: 'none' | 'count' | 'sum' | 'avg' | 'min' | 'max' | 'latest' | 'distinct_count';
   timeWindowDays?: number;
   enabled: boolean;
   missingRate?: number;
@@ -62,6 +63,7 @@ export interface CustomAnalysisConfig {
   importanceMethod: 'model_based' | 'permutation' | 'hybrid';
   patternCount: number;
   selectedFeatureKeys: string[];
+  segmentObjective?: SegmentObjective;
 }
 
 export interface AutopilotAnalysisConfig {
@@ -73,6 +75,7 @@ export interface AutopilotAnalysisConfig {
   excludeHighMissingColumns: boolean;
   excludeHighCardinalityColumns: boolean;
   blockedColumnKeys: string[];
+  segmentObjective?: SegmentObjective;
 }
 
 export type AnalysisRunConfig = CustomAnalysisConfig | AutopilotAnalysisConfig;

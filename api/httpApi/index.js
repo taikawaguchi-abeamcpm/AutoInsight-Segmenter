@@ -209,7 +209,8 @@ const buildDefaultAnalysisConfig = (summary, positiveValue) => ({
   correlationThreshold: 0.9,
   importanceMethod: 'hybrid',
   patternCount: 10,
-  selectedFeatureKeys: summary.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey)
+  selectedFeatureKeys: summary.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey),
+  segmentObjective: 'unconverted_targeting'
 });
 
 const inferTargetPositiveValueFromData = async ({ connection, req, mapping, dataset }) => {

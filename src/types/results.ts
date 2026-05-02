@@ -37,7 +37,7 @@ export interface FeatureImportanceResult {
   category: 'profile' | 'behavior' | 'transaction' | 'engagement' | 'derived';
   importanceScore: number;
   direction: 'positive' | 'negative' | 'neutral';
-  aggregation: 'none' | 'count' | 'sum' | 'avg' | 'latest' | 'distinct_count';
+  aggregation: 'none' | 'count' | 'sum' | 'avg' | 'min' | 'max' | 'latest' | 'distinct_count';
   timeWindowDays?: number;
   missingRate?: number;
   description?: string;
@@ -88,6 +88,16 @@ export interface AnalysisModelMetadata {
   trainingRowCount: number;
   trainingFeatureCount: number;
   logLoss?: number;
+  analysisUnit?: 'customer' | 'event';
+  analysisUnitKeyColumn?: string;
+  sourceRowCount?: number;
+  blockedFeatureCount?: number;
+  autoBlockedFeatureCount?: number;
+  timeUnsafeFeatureCount?: number;
+  futureFeatureValueCount?: number;
+  outsideWindowFeatureValueCount?: number;
+  targetEventTimeColumn?: string;
+  segmentObjective?: 'unconverted_targeting' | 'all_matching' | 'success_profile';
 }
 
 export interface SelectedSegmentContext {
