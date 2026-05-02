@@ -44,7 +44,7 @@ jobs:
           az functionapp config appsettings set \
             --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
             --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
-            --settings FUNCTIONS_WORKER_RUNTIME=python SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true
       - name: Deploy Python analysis Function App
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         uses: Azure/functions-action@v1
