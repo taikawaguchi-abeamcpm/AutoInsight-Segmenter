@@ -33,6 +33,8 @@ jobs:
           app-name: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_NAME }}
           package: analysis-function
           publish-profile: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE }}
+          sku: flexconsumption
+          remote-build: true
 
   build_and_deploy:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')

@@ -33,6 +33,15 @@ AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE=<publish-profile-xml>
 
 The workflow packages `analysis-worker/autoinsight_analysis` into `analysis-function/` before deploying.
 
+For a Flex Consumption Function App, the GitHub Actions deployment must include:
+
+```yaml
+sku: flexconsumption
+remote-build: true
+```
+
+`sku: flexconsumption` tells `Azure/functions-action` to use the Flex Consumption deployment path when authenticating with a publish profile. `remote-build: true` enables the remote Oryx build required for the Python app package.
+
 Important:
 
 - `AZURE_ANALYSIS_FUNCTIONAPP_NAME` must be the Python Function App name, not the Static Web App name.
@@ -60,6 +69,22 @@ the GitHub Action parsed the publish profile, but Azure Kudu rejected the creden
 7. Re-run the GitHub Actions workflow.
 
 If your organization disables SCM basic publishing credentials, use an Azure service principal or OIDC based deployment instead of publish profiles.
+
+You can validate a publish profile locally without exposing the credentials:
+
+```powershell
+$path = "C:\path\to\autoinsight.PublishSettings"
+[xml]$xml = Get-Content -LiteralPath $path
+$profile = $xml.publishData.publishProfile |
+  Where-Object { $_.publishMethod -eq "ZipDeploy" } |
+  Select-Object -First 1
+$pair = "{0}:{1}" -f $profile.userName, $profile.userPWD
+$basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+$uri = "https://{0}/api/settings" -f $profile.publishUrl
+Invoke-WebRequest -Uri $uri -Headers @{ Authorization = "Basic $basic" } -UseBasicParsing
+```
+
+If this returns `401`, the publish profile is not valid for Kudu. Re-enable SCM Basic Auth, reset or re-download the publish profile from the same Function App, then update the GitHub secret.
 
 ## Static Web Apps App Settings
 
