@@ -7,31 +7,11 @@ from pathlib import Path
 import azure.functions as func
 
 
-CURRENT_DIR = Path(__file__).resolve().parent
-REPO_WORKER_DIR = CURRENT_DIR.parent / "analysis-worker"
-if REPO_WORKER_DIR.exists():
-    sys.path.insert(0, str(REPO_WORKER_DIR))
-sys.path.insert(0, str(CURRENT_DIR))
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
 
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
-
-
-@app.route(route="analysis/health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
-def health(_req: func.HttpRequest) -> func.HttpResponse:
-    return func.HttpResponse(
-        json.dumps({
-            "status": "ok",
-            "runtime": "python",
-            "worker": "autoinsight-analysis",
-        }),
-        status_code=200,
-        mimetype="application/json",
-    )
-
-
-@app.route(route="analysis/run", methods=["POST"])
-def run_analysis(req: func.HttpRequest) -> func.HttpResponse:
+def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         payload = req.get_json()
     except ValueError:

@@ -42,6 +42,22 @@ AZURE_SUBSCRIPTION_ID=<subscription-id>
 
 The workflow packages `analysis-worker/autoinsight_analysis` into `analysis-function/` before deploying.
 
+The worker is packaged as a Python v1-style Azure Functions project:
+
+```text
+analysis-function/
+  host.json
+  requirements.txt
+  analysis_health/
+    __init__.py
+    function.json
+  analysis_run/
+    __init__.py
+    function.json
+```
+
+This explicit `function.json` layout avoids decorator-indexing issues where the portal cannot list functions from `function_app.py`.
+
 For a Flex Consumption Function App, the GitHub Actions deployment uses Azure Login and remote build:
 
 ```yaml

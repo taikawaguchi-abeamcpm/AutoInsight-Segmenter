@@ -35,8 +35,16 @@ jobs:
       - name: Package Python analysis worker
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         run: |
+          rm -rf analysis-function/autoinsight_analysis
           cp -R analysis-worker/autoinsight_analysis analysis-function/autoinsight_analysis
           python -m compileall analysis-function
+      - name: Configure Python Function App settings
+        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
+        run: |
+          az functionapp config appsettings set \
+            --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
+            --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
+            --settings FUNCTIONS_WORKER_RUNTIME=python SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true
       - name: Deploy Python analysis Function App
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         uses: Azure/functions-action@v1
