@@ -9,6 +9,7 @@ export interface AnalysisResultDocument {
   status: AnalysisJobStatus;
   progressPercent: number;
   message: string;
+  detail?: string;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;

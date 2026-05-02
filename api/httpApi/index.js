@@ -29,8 +29,23 @@ const error = (context, status, code, message, targetPath) => {
   });
 };
 
+const looksLikeHtml = (value) =>
+  typeof value === 'string' && /<html[\s>]|<!doctype html|<body[\s>]|<h\d[\s>]/i.test(value);
+
+const compactErrorText = (value) =>
+  String(value || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, message, detail }) => {
   const timestamp = nowIso();
+  const safeMessage = looksLikeHtml(message)
+    ? 'Python analysis worker returned an HTML server error. Check the Function App logs.'
+    : message;
+  const safeDetail = detail || (looksLikeHtml(message) ? compactErrorText(message).slice(0, 1000) : undefined);
   return {
     id: analysisJobId,
     analysisJobId,
@@ -40,8 +55,8 @@ const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, 
     mode: config?.mode || 'custom',
     status: 'failed',
     progressPercent: 100,
-    message,
-    detail,
+    message: safeMessage,
+    detail: safeDetail,
     createdAt: timestamp,
     startedAt: timestamp,
     completedAt: timestamp,

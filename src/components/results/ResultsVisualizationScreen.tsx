@@ -84,6 +84,7 @@ export const ResultsVisualizationScreen = ({
   }
 
   const completed = result.status === 'completed';
+  const statusMessage = result.message.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
   return (
     <div className="screen">
@@ -112,7 +113,8 @@ export const ResultsVisualizationScreen = ({
           <span style={{ width: `${result.progressPercent}%` }} />
         </div>
         <strong>{result.progressPercent}%</strong>
-        <span>{result.message}</span>
+        <span>{statusMessage}</span>
+        {result.status === 'failed' && result.detail ? <small>{result.detail}</small> : null}
       </Card>
 
       <div className="kpi-strip">

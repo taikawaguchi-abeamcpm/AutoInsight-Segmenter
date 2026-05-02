@@ -24,6 +24,17 @@ const pythonCandidates = () => {
 const analysisError = (message, code, status = 500) =>
   Object.assign(new Error(message), { code, status });
 
+const looksLikeHtml = (value) =>
+  typeof value === 'string' && /<html[\s>]|<!doctype html|<body[\s>]|<h\d[\s>]/i.test(value);
+
+const textFromHtml = (value) =>
+  String(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const workerUrlSummary = () => {
   try {
     const url = new URL(WORKER_URL);
@@ -128,7 +139,12 @@ const runRemotePythonWorker = async (payload) => {
 
     if (!response.ok) {
       const message = body?.message || body?.error || body || response.statusText || 'Python analysis worker request failed.';
-      throw analysisError(message, 'ANALYSIS.WORKER_HTTP_FAILED', response.status || 502);
+      const errorMessage = looksLikeHtml(message)
+        ? `Python analysis worker returned HTTP ${response.status}. Check the Function App logs.`
+        : message;
+      const err = analysisError(errorMessage, 'ANALYSIS.WORKER_HTTP_FAILED', response.status || 502);
+      err.detail = looksLikeHtml(message) ? textFromHtml(message).slice(0, 1000) : undefined;
+      throw err;
     }
 
     if (!body || typeof body !== 'object') {

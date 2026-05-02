@@ -13,8 +13,6 @@ if REPO_WORKER_DIR.exists():
     sys.path.insert(0, str(REPO_WORKER_DIR))
 sys.path.insert(0, str(CURRENT_DIR))
 
-from autoinsight_analysis.worker import build_real_analysis_result
-
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
@@ -44,6 +42,8 @@ def run_analysis(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
+        from autoinsight_analysis.worker import build_real_analysis_result
+
         result = build_real_analysis_result(payload)
         return func.HttpResponse(
             json.dumps(result, ensure_ascii=False, separators=(",", ":")),
