@@ -24,30 +24,55 @@ https://<python-function-app>.azurewebsites.net/api/analysis/run
 
 ## GitHub Secrets
 
-Set these repository secrets to deploy the Python worker from CI:
+Set these repository secrets to deploy the Python worker from CI with Azure Login / OIDC:
 
 ```text
 AZURE_ANALYSIS_FUNCTIONAPP_NAME=<python-function-app-name>
-AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE=<publish-profile-xml>
+AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP=<resource-group-name>
+AZURE_CLIENT_ID=<managed-identity-or-app-registration-client-id>
+AZURE_TENANT_ID=<tenant-id>
+AZURE_SUBSCRIPTION_ID=<subscription-id>
 ```
 
 The workflow packages `analysis-worker/autoinsight_analysis` into `analysis-function/` before deploying.
 
-For a Flex Consumption Function App, the GitHub Actions deployment must include:
+For a Flex Consumption Function App, the GitHub Actions deployment uses Azure Login and remote build:
 
 ```yaml
-sku: flexconsumption
-remote-build: true
+uses: azure/login@v2
+...
+uses: Azure/functions-action@v1
+with:
+  resource-group: <resource-group-name>
+  remote-build: true
 ```
 
-`sku: flexconsumption` tells `Azure/functions-action` to use the Flex Consumption deployment path when authenticating with a publish profile. `remote-build: true` enables the remote Oryx build required for the Python app package.
+`remote-build: true` enables the remote Oryx build required for the Python app package.
 
 Important:
 
 - `AZURE_ANALYSIS_FUNCTIONAPP_NAME` must be the Python Function App name, not the Static Web App name.
-- `AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE` must be downloaded from that same Python Function App.
-- Do not use the Static Web App deployment token or Static Web App publish settings for this secret.
-- Paste the full publish profile XML, including the outer `<publishData>` element.
+- `AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP` must be the resource group that contains the Python Function App.
+- The identity used by `AZURE_CLIENT_ID` needs permission to deploy to the Function App. `Contributor` on the Function App or its resource group is sufficient.
+- The GitHub workflow needs `id-token: write`; this is already set in `.github/workflows/azure-static-web-apps.yml`.
+
+## Configure OIDC
+
+Create an Entra ID app registration or user-assigned managed identity for GitHub Actions, then add a federated credential:
+
+```text
+Issuer: https://token.actions.githubusercontent.com
+Subject: repo:<github-owner>/<github-repo>:ref:refs/heads/main
+Audience: api://AzureADTokenExchange
+```
+
+For this repository, the subject should be:
+
+```text
+repo:taikawaguchi-abeamcpm/AutoInsight-Segmenter:ref:refs/heads/main
+```
+
+Assign that identity `Contributor` on the Python Function App or its resource group, then set the GitHub secrets listed above.
 
 ## Troubleshooting GitHub Actions 401
 
@@ -68,7 +93,7 @@ the GitHub Action parsed the publish profile, but Azure Kudu rejected the creden
 6. Enable `SCM Basic Auth Publishing Credentials` if it is disabled.
 7. Re-run the GitHub Actions workflow.
 
-If your organization disables SCM basic publishing credentials, use an Azure service principal or OIDC based deployment instead of publish profiles.
+If your organization disables SCM basic publishing credentials, use the OIDC based deployment described above instead of publish profiles.
 
 You can validate a publish profile locally without exposing the credentials:
 

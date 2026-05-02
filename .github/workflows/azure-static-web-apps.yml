@@ -1,5 +1,9 @@
 name: Azure Static Web Apps CI/CD
 
+permissions:
+  contents: read
+  id-token: write
+
 on:
   push:
     branches:
@@ -15,25 +19,31 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AZURE_ANALYSIS_FUNCTIONAPP_NAME: ${{ secrets.AZURE_ANALYSIS_FUNCTIONAPP_NAME }}
-      AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE: ${{ secrets.AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE }}
+      AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP: ${{ secrets.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Azure login
+        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Package Python analysis worker
-        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE != ''
+        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         run: |
           cp -R analysis-worker/autoinsight_analysis analysis-function/autoinsight_analysis
           python -m compileall analysis-function
       - name: Deploy Python analysis Function App
-        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE != ''
+        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_NAME }}
           package: analysis-function
-          publish-profile: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_PUBLISH_PROFILE }}
-          sku: flexconsumption
+          resource-group: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP }}
           remote-build: true
 
   build_and_deploy:
