@@ -69,7 +69,7 @@ with:
   remote-build: true
 ```
 
-`remote-build: true` enables the remote Oryx build required for the Python app package.
+`remote-build: true` lets the deployment action request a remote build for the Python app package when the hosting SKU supports it.
 
 For Flex Consumption apps, do not set `FUNCTIONS_WORKER_RUNTIME` with `az functionapp config appsettings set`. The runtime is part of the Function App site configuration and Azure rejects the same key in app settings with:
 
@@ -77,12 +77,14 @@ For Flex Consumption apps, do not set `FUNCTIONS_WORKER_RUNTIME` with `az functi
 Site.SiteConfig.AppSettings.FUNCTIONS_WORKER_RUNTIME ... is invalid.
 ```
 
-The workflow only sets remote build flags:
+The workflow removes these unsupported settings before deployment if they exist from a previous run:
 
 ```text
 SCM_DO_BUILD_DURING_DEPLOYMENT=true
 ENABLE_ORYX_BUILD=true
 ```
+
+Do not add them back for the Flex Consumption Function App. The deployment action handles the Flex deployment path itself.
 
 Important:
 
