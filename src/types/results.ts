@@ -88,6 +88,10 @@ export interface AnalysisModelMetadata {
   trainingRowCount: number;
   trainingFeatureCount: number;
   logLoss?: number;
+  validationRowCount?: number;
+  validationLogLoss?: number | null;
+  rocAuc?: number | null;
+  prAuc?: number | null;
   analysisUnit?: 'customer' | 'event';
   analysisUnitKeyColumn?: string;
   sourceRowCount?: number;
@@ -98,6 +102,8 @@ export interface AnalysisModelMetadata {
   outsideWindowFeatureValueCount?: number;
   targetEventTimeColumn?: string;
   segmentObjective?: 'unconverted_targeting' | 'all_matching' | 'success_profile';
+  randomSeed?: number;
+  importanceMethod?: 'model_based' | 'permutation' | 'hybrid';
 }
 
 export interface SelectedSegmentContext {

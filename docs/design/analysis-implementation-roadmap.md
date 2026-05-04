@@ -54,6 +54,14 @@
 - 係数や単変量差だけに依存しない重要度にする。
 - 結果の信頼度をビジネス画面で説明できるようにする。
 
+実装状況:
+- Python worker のロジスティック回帰で、目的変数ラベルを層化した学習/検証分割を行う。
+- 検証データに対して `rocAuc`、`prAuc`、`validationLogLoss` を算出し、`modelMetadata` に保存する。
+- `importanceMethod = model_based` はモデル係数の絶対値正規化を使う。
+- `importanceMethod = permutation` は検証データで特徴量をシャッフルしたときの AUC 劣化量を使う。AUC が計算できない場合は log loss 悪化量を使う。
+- `importanceMethod = hybrid` は model based と permutation の順位パーセンタイル平均を使う。
+- `randomSeed` を使い、同じ入力では同じ検証分割と permutation 順序になるようにする。
+
 ### Phase 4: オートパイロット
 対象:
 - 目的変数のみ指定された場合の特徴量候補生成を実装する。
