@@ -93,6 +93,13 @@ jobs:
 
           echo "Unsupported Flex app settings are still present after deletion attempts." >&2
           exit 1
+      - name: Configure Python analysis worker limits
+        if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
+        run: |
+          az functionapp config appsettings set \
+            --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
+            --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
+            --settings FABRIC_ANALYSIS_PAGE_SIZE=500 FABRIC_ANALYSIS_MAX_ROWS=5000
       - name: Deploy Python analysis Function App
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         uses: Azure/functions-action@v1

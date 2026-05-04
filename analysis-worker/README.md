@@ -38,5 +38,5 @@ is treated as an API failure by `api/src/analysisEngine.js`.
 - `PYTHON_EXECUTABLE`: optional path used by the Node adapter
 - `ANALYSIS_WORKER_TIMEOUT_MS`: Node adapter timeout, default 15 minutes
 - `FABRIC_GRAPHQL_TIMEOUT_MS`: GraphQL request timeout
-- `FABRIC_ANALYSIS_PAGE_SIZE`: GraphQL page size
-- `FABRIC_ANALYSIS_MAX_ROWS`: maximum rows per table fetch
+- `FABRIC_ANALYSIS_PAGE_SIZE`: GraphQL page size, default 500
+- `FABRIC_ANALYSIS_MAX_ROWS`: maximum rows per table fetch, default 5,000 for the synchronous experiment path

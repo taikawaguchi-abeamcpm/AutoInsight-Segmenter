@@ -15,8 +15,8 @@ from typing import Any
 
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 GRAPHQL_TIMEOUT_SECONDS = float(os.environ.get("FABRIC_GRAPHQL_TIMEOUT_MS", "30000")) / 1000
-ANALYSIS_PAGE_SIZE = int(os.environ.get("FABRIC_ANALYSIS_PAGE_SIZE", "1000"))
-ANALYSIS_MAX_ROWS = int(os.environ.get("FABRIC_ANALYSIS_MAX_ROWS", "100000"))
+ANALYSIS_PAGE_SIZE = int(os.environ.get("FABRIC_ANALYSIS_PAGE_SIZE", "500"))
+ANALYSIS_MAX_ROWS = int(os.environ.get("FABRIC_ANALYSIS_MAX_ROWS", "5000"))
 
 
 def now_iso() -> str:

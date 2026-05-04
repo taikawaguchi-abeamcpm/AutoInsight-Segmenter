@@ -60,13 +60,31 @@ const scopedAnalysisInputs = (
     .filter((column) => requiredTableIds.has(column.tableId) && ['customer_id', 'event_time'].includes(column.columnRole))
     .forEach((column) => requiredColumnIds.add(column.columnId));
 
-  const scopedDataset = {
-    ...dataset,
+  const scopedDataset: FabricDataset = {
+    id: dataset.id,
+    workspaceId: dataset.workspaceId,
+    name: dataset.name,
+    displayName: dataset.displayName,
+    lastSyncedAt: dataset.lastSyncedAt,
     tables: dataset.tables
       .filter((table) => requiredTableIds.has(table.id))
       .map((table) => ({
-        ...table,
-        columns: table.columns.filter((column) => requiredColumnIds.has(column.id))
+        id: table.id,
+        name: table.name,
+        displayName: table.displayName,
+        rowCount: table.rowCount,
+        columns: table.columns
+          .filter((column) => requiredColumnIds.has(column.id))
+          .map((column) => ({
+            id: column.id,
+            tableId: column.tableId,
+            name: column.name,
+            displayName: column.displayName,
+            dataType: column.dataType,
+            nullable: column.nullable,
+            isPrimaryKey: column.isPrimaryKey,
+            isForeignKey: column.isForeignKey
+          }))
       }))
       .filter((table) => table.columns.length > 0)
   };
@@ -76,16 +94,73 @@ const scopedAnalysisInputs = (
   return {
     dataset: scopedDataset,
     mapping: {
-      ...mapping,
-      tableMappings: mapping.tableMappings.filter((table) => scopedTableIds.has(table.tableId)),
-      columnMappings: mapping.columnMappings.filter((column) => scopedTableIds.has(column.tableId) && scopedColumnIds.has(column.columnId)),
+      id: mapping.id,
+      datasetId: mapping.datasetId,
+      version: mapping.version,
+      status: mapping.status,
+      createdAt: mapping.createdAt,
+      updatedAt: mapping.updatedAt,
+      updatedBy: mapping.updatedBy,
+      validationIssues: [],
+      tableMappings: mapping.tableMappings
+        .filter((table) => scopedTableIds.has(table.tableId))
+        .map((table) => ({
+          tableId: table.tableId,
+          entityRole: table.entityRole,
+          businessName: table.businessName,
+          primaryKeyColumnId: table.primaryKeyColumnId,
+          customerJoinColumnId: table.customerJoinColumnId,
+          source: table.source,
+          status: table.status
+        })),
+      columnMappings: mapping.columnMappings
+        .filter((column) => scopedTableIds.has(column.tableId) && scopedColumnIds.has(column.columnId))
+        .map((column) => ({
+          columnId: column.columnId,
+          tableId: column.tableId,
+          columnRole: column.columnRole,
+          businessName: column.businessName,
+          source: column.source,
+          status: column.status,
+          featureConfig: column.featureConfig
+            ? {
+                featureKey: column.featureConfig.featureKey,
+                label: column.featureConfig.label,
+                dataType: column.featureConfig.dataType,
+                valueType: column.featureConfig.valueType,
+                aggregation: column.featureConfig.aggregation,
+                timeWindow: column.featureConfig.timeWindow,
+                missingValuePolicy: column.featureConfig.missingValuePolicy,
+                enabled: column.featureConfig.enabled
+              }
+            : undefined,
+          targetConfig: column.targetConfig
+            ? {
+                targetKey: column.targetConfig.targetKey,
+                label: column.targetConfig.label,
+                positiveValue: column.targetConfig.positiveValue,
+                negativeValue: column.targetConfig.negativeValue,
+                eventTimeColumnId: column.targetConfig.eventTimeColumnId,
+                evaluationWindow: column.targetConfig.evaluationWindow
+              }
+            : undefined
+        })),
       joinDefinitions: mapping.joinDefinitions.filter(
         (join) =>
           scopedTableIds.has(join.fromTableId) &&
           scopedTableIds.has(join.toTableId) &&
           join.fromColumnIds.every((columnId) => scopedColumnIds.has(columnId)) &&
           join.toColumnIds.every((columnId) => scopedColumnIds.has(columnId))
-      )
+      ).map((join) => ({
+        id: join.id,
+        fromTableId: join.fromTableId,
+        fromColumnIds: join.fromColumnIds,
+        toTableId: join.toTableId,
+        toColumnIds: join.toColumnIds,
+        joinType: join.joinType,
+        cardinality: join.cardinality,
+        source: join.source
+      }))
     }
   };
 };
@@ -200,7 +275,7 @@ export const analysisApi = {
 
     return {
       valid: !issues.some((issue) => issue.blocking),
-      estimatedDurationSeconds: config.mode === 'autopilot' ? 600 : 240,
+      estimatedDurationSeconds: config.mode === 'autopilot' ? 180 : 90,
       issues
     };
   },

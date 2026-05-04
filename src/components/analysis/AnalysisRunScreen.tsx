@@ -51,7 +51,7 @@ const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRu
 
   return {
     valid: !issues.some((issue) => issue.blocking),
-    estimatedDurationSeconds: config.mode === 'autopilot' ? 600 : 240,
+    estimatedDurationSeconds: config.mode === 'autopilot' ? 180 : 90,
     issues
   };
 };

@@ -565,7 +565,7 @@ const routes = {
     const now = nowIso();
     const runId = `run-${makeHash({ mappingDocumentId, config })}`;
     const analysisJobId = `job-${makeHash({ runId, now })}`;
-    const estimatedDurationSeconds = config?.mode === 'autopilot' ? 600 : 240;
+    const estimatedDurationSeconds = config?.mode === 'autopilot' ? 180 : 90;
     const datasetId = dataset?.id || mapping?.datasetId;
     const analysisConnection = await resolveConnectionForDataset(datasetId);
     if (!analysisConnection) {

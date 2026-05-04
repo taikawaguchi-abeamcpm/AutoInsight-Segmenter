@@ -219,3 +219,13 @@ If `configured` is `false`, set `ANALYSIS_WORKER_URL` on the Static Web App. If 
 If the Python worker URL is configured and the worker fails during an analysis run, `/api/analysis/start` stores a failed analysis result instead of silently using JavaScript analysis.
 
 For large Fabric schemas, the browser sends only the columns needed by the selected target, features, time keys, and joins to `/api/analysis/start`. The API also normalizes analysis results before writing to Cosmos DB and falls back to a compact failed result if the full result cannot be persisted.
+
+The current `/api/analysis/start` path is synchronous from the Static Web Apps API perspective, so the worker defaults are intentionally experiment-sized:
+
+```text
+FABRIC_ANALYSIS_PAGE_SIZE=500
+FABRIC_ANALYSIS_MAX_ROWS=5000
+```
+
+Raise these values only after moving analysis execution to an asynchronous job queue or durable worker path.
+The GitHub Actions deployment sets the same values on the Python Function App to avoid stale app settings overriding the code defaults.

@@ -2,8 +2,8 @@ const FABRIC_SCOPE = 'https://api.fabric.microsoft.com/.default';
 const FABRIC_GRAPHQL_TIMEOUT_MS = Number(process.env.FABRIC_GRAPHQL_TIMEOUT_MS || 30000);
 const ROW_COUNT_PAGE_SIZE = Number(process.env.FABRIC_ROW_COUNT_PAGE_SIZE || 1000);
 const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 1000);
-const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 1000);
-const ANALYSIS_MAX_ROWS = Number(process.env.FABRIC_ANALYSIS_MAX_ROWS || 100000);
+const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 500);
+const ANALYSIS_MAX_ROWS = Number(process.env.FABRIC_ANALYSIS_MAX_ROWS || 5000);
 
 const getGraphqlApiName = (endpointUrl) => {
   try {
