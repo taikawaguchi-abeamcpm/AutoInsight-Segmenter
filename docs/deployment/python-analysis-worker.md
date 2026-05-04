@@ -58,7 +58,7 @@ analysis-function/
 
 This explicit `function.json` layout avoids decorator-indexing issues where the portal cannot list functions from `function_app.py`.
 
-For a Flex Consumption Function App, the GitHub Actions deployment uses Azure Login and remote build:
+For a Flex Consumption Function App, the GitHub Actions deployment uses Azure Login and packages Python dependencies into `.python_packages` before deployment:
 
 ```yaml
 uses: azure/login@v2
@@ -66,10 +66,9 @@ uses: azure/login@v2
 uses: Azure/functions-action@v1
 with:
   resource-group: <resource-group-name>
-  remote-build: true
 ```
 
-`remote-build: true` lets the deployment action request a remote build for the Python app package when the hosting SKU supports it.
+This avoids setting remote-build app settings that are rejected by Flex Consumption validation.
 
 For Flex Consumption apps, do not set `FUNCTIONS_WORKER_RUNTIME` with `az functionapp config appsettings set`. The runtime is part of the Function App site configuration and Azure rejects the same key in app settings with:
 
@@ -85,6 +84,12 @@ ENABLE_ORYX_BUILD=true
 ```
 
 Do not add them back for the Flex Consumption Function App. The deployment action handles the Flex deployment path itself.
+
+The workflow also does not pass `remote-build: true` to `Azure/functions-action@v1` for this app. Dependencies are installed locally into:
+
+```text
+analysis-function/.python_packages/lib/site-packages
+```
 
 Important:
 

@@ -36,15 +36,36 @@ jobs:
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         run: |
           rm -rf analysis-function/autoinsight_analysis
+          rm -rf analysis-function/.python_packages
           cp -R analysis-worker/autoinsight_analysis analysis-function/autoinsight_analysis
+          python -m pip install --upgrade pip
+          python -m pip install --target analysis-function/.python_packages/lib/site-packages -r analysis-function/requirements.txt
           python -m compileall analysis-function
       - name: Remove unsupported Flex Function App settings
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         run: |
-          az functionapp config appsettings delete \
-            --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
-            --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
-            --setting-names SCM_DO_BUILD_DURING_DEPLOYMENT ENABLE_ORYX_BUILD || true
+          for attempt in 1 2 3 4 5 6; do
+            az functionapp config appsettings delete \
+              --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
+              --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
+              --setting-names SCM_DO_BUILD_DURING_DEPLOYMENT ENABLE_ORYX_BUILD || true
+
+            remaining="$(az functionapp config appsettings list \
+              --name "$AZURE_ANALYSIS_FUNCTIONAPP_NAME" \
+              --resource-group "$AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP" \
+              --query "[?name=='SCM_DO_BUILD_DURING_DEPLOYMENT' || name=='ENABLE_ORYX_BUILD'].name" \
+              --output tsv)"
+
+            if [ -z "$remaining" ]; then
+              exit 0
+            fi
+
+            echo "Waiting for unsupported app settings to be removed: $remaining"
+            sleep 10
+          done
+
+          echo "Unsupported Flex app settings are still present after deletion attempts." >&2
+          exit 1
       - name: Deploy Python analysis Function App
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''
         uses: Azure/functions-action@v1
@@ -52,7 +73,6 @@ jobs:
           app-name: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_NAME }}
           package: analysis-function
           resource-group: ${{ env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP }}
-          remote-build: true
 
   build_and_deploy:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
