@@ -40,6 +40,12 @@ jobs:
           cp -R analysis-worker/autoinsight_analysis analysis-function/autoinsight_analysis
           python -m pip install --upgrade pip
           python -m pip install --target analysis-function/.python_packages/lib/site-packages -r analysis-function/requirements.txt
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'analysis-function')
+          from autoinsight_analysis.worker import build_real_analysis_result
+          assert callable(build_real_analysis_result)
+          PY
           python -m compileall analysis-function
       - name: Remove unsupported Flex Function App settings
         if: env.AZURE_ANALYSIS_FUNCTIONAPP_NAME != '' && env.AZURE_ANALYSIS_FUNCTIONAPP_RESOURCE_GROUP != ''

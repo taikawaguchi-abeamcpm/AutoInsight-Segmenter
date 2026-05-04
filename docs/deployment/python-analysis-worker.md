@@ -41,6 +41,7 @@ AZURE_SUBSCRIPTION_ID=<subscription-id>
 ```
 
 The workflow packages `analysis-worker/autoinsight_analysis` into `analysis-function/` before deploying.
+The package step validates that `autoinsight_analysis.worker` can be imported from the deploy directory before the Function App is published.
 
 The worker is packaged as a Python v1-style Azure Functions project:
 
@@ -57,6 +58,8 @@ analysis-function/
 ```
 
 This explicit `function.json` layout avoids decorator-indexing issues where the portal cannot list functions from `function_app.py`.
+
+The v1 entry points return JSON strings directly instead of importing `azure.functions` at module import time. This keeps the health endpoint usable even when worker dependencies fail to load. `/analysis/run` also converts worker exceptions into a failed analysis result JSON, so the Static Web App API can persist the failure details instead of surfacing a generic HTTP 500.
 
 For a Flex Consumption Function App, the GitHub Actions deployment uses Azure Login and packages Python dependencies into `.python_packages` before deployment:
 

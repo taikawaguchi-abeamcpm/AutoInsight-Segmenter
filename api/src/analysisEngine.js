@@ -35,6 +35,25 @@ const textFromHtml = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const parseJsonText = (value) => {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const readResponseBody = async (response) => {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => null);
+  }
+
+  const text = await response.text().catch(() => '');
+  return parseJsonText(text) || text;
+};
+
 const workerUrlSummary = () => {
   try {
     const url = new URL(WORKER_URL);
@@ -84,10 +103,7 @@ const getAnalysisWorkerStatus = async () => {
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const response = await fetch(healthUrl, { method: 'GET', signal: controller.signal });
-    const contentType = response.headers.get('content-type') || '';
-    const body = contentType.includes('application/json')
-      ? await response.json().catch(() => null)
-      : await response.text().catch(() => '');
+    const body = await readResponseBody(response);
     return {
       configured: true,
       reachable: response.ok,
@@ -132,10 +148,7 @@ const runRemotePythonWorker = async (payload) => {
       body: JSON.stringify(payload),
       signal: controller.signal
     });
-    const contentType = response.headers.get('content-type') || '';
-    const body = contentType.includes('application/json')
-      ? await response.json().catch(() => null)
-      : await response.text().catch(() => '');
+    const body = await readResponseBody(response);
 
     if (!response.ok) {
       const message = body?.message || body?.error || body || response.statusText || 'Python analysis worker request failed.';
