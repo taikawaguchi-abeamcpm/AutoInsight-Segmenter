@@ -13,6 +13,25 @@ const outputLabels: Record<SegmentOutputType, string> = {
   external: 'ほかの施策ツールで使うために保存'
 };
 
+const outputHelp: Record<SegmentOutputType, string> = {
+  flag: 'Fabric 側で施策対象フラグとして参照できます。',
+  list: '今回の条件に合う顧客IDリストとして残します。',
+  csv: '確認や外部連携用にファイル出力します。',
+  external: 'MA や営業支援ツールへ渡す前提で保存します。'
+};
+
+const formatAudienceRate = (value?: number) => {
+  if (typeof value !== 'number') {
+    return '-';
+  }
+
+  if (value > 0 && value < 0.001) {
+    return formatPercent(value, 3);
+  }
+
+  return formatPercent(value);
+};
+
 export const SegmentCreationScreen = ({
   context,
   onBack
@@ -139,7 +158,14 @@ export const SegmentCreationScreen = ({
   };
 
   if (!draft) {
-    return <div className="screen"><Card>セグメント編集内容を読み込んでいます。</Card></div>;
+    return (
+      <div className="screen">
+        <Card className="loading-panel">
+          <strong>セグメント編集内容を準備しています。</strong>
+          <p>選択した候補から条件、件数、出力先を作成しています。</p>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -147,7 +173,7 @@ export const SegmentCreationScreen = ({
       <header className="screen-header">
         <div>
           <h1>セグメント作成</h1>
-          <p>分析結果を配信・抽出に使える顧客グループとして保存します。</p>
+          <p>分析結果を配信・抽出に使える顧客グループとして保存します。作成前に条件と件数を確認してください。</p>
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>結果に戻る</Button>
@@ -160,7 +186,7 @@ export const SegmentCreationScreen = ({
         <Metric label="セグメント名" value={draft.name} />
         <Metric label="元候補数" value={draft.sourceRecommendationIds.length} />
         <Metric label="推定対象件数" value={formatNumber(draft.previewSummary?.estimatedAudienceSize)} />
-        <Metric label="母集団比率" value={formatPercent(draft.previewSummary?.audienceRate)} />
+        <Metric label="母集団比率" value={formatAudienceRate(draft.previewSummary?.audienceRate)} />
       </div>
 
       <div className="segment-grid">
@@ -171,6 +197,7 @@ export const SegmentCreationScreen = ({
           </div>
           <Field label="条件グループ">
             <select
+              aria-label="条件グループの一致方法"
               value={draft.ruleTree.operator}
               onChange={(event) =>
                 updateDraft({
@@ -188,8 +215,16 @@ export const SegmentCreationScreen = ({
           <div className="condition-list">
             {draft.ruleTree.conditions.map((condition) => (
               <div className="condition-row" key={condition.id}>
-                <input value={condition.fieldLabel} onChange={(event) => updateCondition(condition.id, { fieldLabel: event.target.value })} />
-                <select value={condition.operator} onChange={(event) => updateCondition(condition.id, { operator: event.target.value as SegmentRuleCondition['operator'] })}>
+                <input
+                  aria-label="条件項目"
+                  value={condition.fieldLabel}
+                  onChange={(event) => updateCondition(condition.id, { fieldLabel: event.target.value })}
+                />
+                <select
+                  aria-label="条件の判定方法"
+                  value={condition.operator}
+                  onChange={(event) => updateCondition(condition.id, { operator: event.target.value as SegmentRuleCondition['operator'] })}
+                >
                   <option value="eq">等しい</option>
                   <option value="gte">以上</option>
                   <option value="gt">より大きい</option>
@@ -197,7 +232,11 @@ export const SegmentCreationScreen = ({
                   <option value="between">範囲</option>
                   <option value="contains">含む</option>
                 </select>
-                <input value={String(condition.value)} onChange={(event) => updateCondition(condition.id, { value: condition.fieldType === 'number' ? Number(event.target.value) : event.target.value })} />
+                <input
+                  aria-label="条件値"
+                  value={String(condition.value)}
+                  onChange={(event) => updateCondition(condition.id, { value: condition.fieldType === 'number' ? Number(event.target.value) : event.target.value })}
+                />
                 <button type="button" className="icon-button" onClick={() => removeCondition(condition.id)} aria-label="条件を削除">
                   <Trash2 size={16} />
                 </button>
@@ -228,6 +267,7 @@ export const SegmentCreationScreen = ({
           ))}
           <section className="detail-section">
             <h3>対象サンプル</h3>
+            <p>個人を特定しないサンプルです。実行時は条件に合う顧客IDが出力されます。</p>
             <div className="data-table">
               {draft.previewSummary?.sampleRows.map((row) => (
                 <div className="sample-row" key={row.customerKey}>
@@ -257,10 +297,14 @@ export const SegmentCreationScreen = ({
               <label className="check-row" key={value}>
                 <input
                   type="checkbox"
+                  aria-label={label}
                   checked={draft.outputConfig.outputs.includes(value as SegmentOutputType)}
                   onChange={() => toggleOutput(value as SegmentOutputType)}
                 />
-                {label}
+                <span>
+                  <strong>{label}</strong>
+                  <small>{outputHelp[value as SegmentOutputType]}</small>
+                </span>
               </label>
             ))}
           </section>

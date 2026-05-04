@@ -199,7 +199,14 @@ export const AnalysisRunScreen = ({
   };
 
   if (!summary || !config) {
-    return <div className="screen"><Card>{loadError ?? '分析入力を読み込んでいます。'}</Card></div>;
+    return (
+      <div className="screen">
+        <Card className="loading-panel">
+          <strong>{loadError ?? '分析入力を準備しています。'}</strong>
+          {!loadError ? <p>意味付け、目的変数、利用できる特徴量を確認しています。</p> : null}
+        </Card>
+      </div>
+    );
   }
 
   const customConfig = config.mode === 'custom' ? config : null;
@@ -215,7 +222,7 @@ export const AnalysisRunScreen = ({
           <Button variant="secondary" onClick={onBack}>意味付けへ戻る</Button>
           <Button variant="secondary"><Save size={16} /> 下書き保存</Button>
           <Button onClick={start} disabled={submitting || validation?.valid === false}>
-            <Play size={16} /> 実験を開始
+            <Play size={16} /> {submitting ? '分析を実行中' : '実験を開始'}
           </Button>
         </div>
       </header>
@@ -241,6 +248,11 @@ export const AnalysisRunScreen = ({
             <h2>分析対象サマリ</h2>
             <Badge tone="success">{summary.customerTableName}</Badge>
           </div>
+          {mode === 'autopilot' ? (
+            <p className="notice success">
+              目的変数「{summary.target.label}」を起点に、AIが候補特徴量の組み合わせとセグメント化しやすいパターンを自動探索します。
+            </p>
+          ) : null}
           <div className="metrics-grid">
             <Metric label="分析に使える件数" value={formatNumber(summary.dataQuality.eligibleRowCount)} />
             <Metric label="目的変数" value={summary.target.label} />
@@ -254,6 +266,7 @@ export const AnalysisRunScreen = ({
                 <label className="feature-row" key={feature.featureKey}>
                   <input
                     type="checkbox"
+                    aria-label={`${feature.label}を分析に使う`}
                     checked={config.mode !== 'custom' || config.selectedFeatureKeys.includes(feature.featureKey)}
                     disabled={config.mode !== 'custom'}
                     onChange={() => toggleFeature(feature.featureKey)}
@@ -285,10 +298,15 @@ export const AnalysisRunScreen = ({
           {customConfig ? (
             <div className="form-grid">
               <Field label="目的変数の正解の値">
-                <input value={customConfig.targetPositiveValue} onChange={(event) => updateConfig({ ...customConfig, targetPositiveValue: event.target.value })} />
+                <input
+                  aria-label="目的変数の正解の値"
+                  value={customConfig.targetPositiveValue}
+                  onChange={(event) => updateConfig({ ...customConfig, targetPositiveValue: event.target.value })}
+                />
               </Field>
               <Field label="モデル方針">
                 <select
+                  aria-label="モデル方針"
                   value={customConfig.optimizationPreference}
                   onChange={(event) => updateConfig({ ...customConfig, optimizationPreference: event.target.value as CustomAnalysisConfig['optimizationPreference'] })}
                 >
@@ -300,6 +318,7 @@ export const AnalysisRunScreen = ({
               <Field label="上限特徴量数">
                 <input
                   type="number"
+                  aria-label="上限特徴量数"
                   min={1}
                   value={customConfig.maxFeatureCount}
                   onChange={(event) => updateConfig({ ...customConfig, maxFeatureCount: Number(event.target.value) })}
@@ -308,6 +327,7 @@ export const AnalysisRunScreen = ({
               <Field label="注目パターン数">
                 <input
                   type="number"
+                  aria-label="注目パターン数"
                   min={1}
                   value={customConfig.patternCount}
                   onChange={(event) => updateConfig({ ...customConfig, patternCount: Number(event.target.value) })}
@@ -318,6 +338,7 @@ export const AnalysisRunScreen = ({
             <div className="form-grid">
               <Field label="探索時間上限">
                 <select
+                  aria-label="探索時間上限"
                   value={config.timeBudgetMinutes}
                   onChange={(event) => updateConfig({ ...config, timeBudgetMinutes: Number(event.target.value) as 5 | 10 | 30 | 60 })}
                 >
@@ -330,6 +351,7 @@ export const AnalysisRunScreen = ({
               <Field label="候補特徴量上限">
                 <input
                   type="number"
+                  aria-label="候補特徴量上限"
                   min={10}
                   value={config.candidateFeatureLimit}
                   onChange={(event) => updateConfig({ ...config, candidateFeatureLimit: Number(event.target.value) })}
@@ -359,7 +381,7 @@ export const AnalysisRunScreen = ({
       <footer className="action-bar">
         <span>エラー {validation?.issues.filter((issue) => issue.severity === 'error').length ?? 0} / 警告 {validation?.issues.filter((issue) => issue.severity === 'warning').length ?? 0}</span>
         <strong>{mode === 'custom' ? 'カスタム分析' : 'オートパイロット'} / {enabledFeatureCount} 特徴量 / 約 {validation?.estimatedDurationSeconds ?? '-'} 秒</strong>
-        <Button onClick={start} disabled={submitting || validation?.valid === false}>分析を開始</Button>
+        <Button onClick={start} disabled={submitting || validation?.valid === false}>{submitting ? '分析を実行中' : '分析を開始'}</Button>
       </footer>
     </div>
   );

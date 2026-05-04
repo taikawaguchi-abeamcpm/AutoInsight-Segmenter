@@ -526,6 +526,16 @@ textarea {
   padding: 18px;
 }
 
+.loading-panel {
+  display: grid;
+  gap: 6px;
+}
+
+.loading-panel p {
+  margin: 0;
+  color: #60737c;
+}
+
 .panel-heading {
   justify-content: space-between;
   gap: 12px;
@@ -918,7 +928,7 @@ textarea {
 
 .check-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   color: #36464f;
 }
@@ -926,6 +936,16 @@ textarea {
 .check-row input,
 .feature-row input {
   width: auto;
+}
+
+.check-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.check-row small {
+  color: #60737c;
 }
 
 .data-table {
@@ -971,6 +991,45 @@ textarea {
   border-radius: 8px;
   background: #ffffff;
   padding: 10px;
+}
+
+.action-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.insight-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #d9e3e7;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+  text-align: left;
+}
+
+.insight-card.selected,
+.insight-card:hover {
+  border-color: #1d7660;
+  background: #f0faf6;
+}
+
+.insight-card strong,
+.action-bar strong {
+  overflow-wrap: anywhere;
+}
+
+.insight-card p {
+  margin: 0;
+  color: #5b6c75;
+}
+
+.insight-rank {
+  color: #14614d;
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .bar-track,
@@ -1129,7 +1188,8 @@ textarea {
   .mapping-grid,
   .mapping-workspace,
   .segment-grid,
-  .kpi-strip {
+  .kpi-strip,
+  .action-insight-grid {
     grid-template-columns: 1fr;
   }
 

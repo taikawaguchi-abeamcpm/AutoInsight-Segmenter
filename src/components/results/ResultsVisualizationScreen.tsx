@@ -11,8 +11,75 @@ const directionLabel: Record<FeatureImportanceResult['direction'], string> = {
   neutral: '中立'
 };
 
+const categoryLabel: Record<FeatureImportanceResult['category'], string> = {
+  profile: '顧客属性',
+  behavior: '行動',
+  transaction: '取引',
+  engagement: '接触',
+  derived: '自動生成'
+};
+
+const aggregationLabel: Record<FeatureImportanceResult['aggregation'], string> = {
+  none: 'そのまま',
+  count: '回数',
+  sum: '合計',
+  avg: '平均',
+  min: '最小',
+  max: '最大',
+  latest: '最新値',
+  distinct_count: '種類数'
+};
+
+const operatorLabel: Record<string, string> = {
+  eq: 'が',
+  neq: 'が次以外',
+  gt: 'が次より大きい',
+  gte: 'が次以上',
+  lt: 'が次未満',
+  lte: 'が次以下',
+  between: 'が次の範囲',
+  in: 'が次のいずれか'
+};
+
 const conditionValueLabel = (condition: { value: string | number | boolean; valueTo?: string | number }) =>
-  condition.valueTo !== undefined ? `${condition.value} - ${condition.valueTo}` : String(condition.value);
+  condition.valueTo !== undefined
+    ? `${formatDisplayValue(condition.value)} - ${formatDisplayValue(condition.valueTo)}`
+    : formatDisplayValue(condition.value);
+
+const formatDisplayValue = (value: string | number | boolean) => {
+  if (typeof value === 'number') {
+    return formatNumber(value, { maximumFractionDigits: value >= 1000 ? 0 : 2 });
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'はい' : 'いいえ';
+  }
+
+  return value;
+};
+
+const conditionFeatureLabel = (label: string) => {
+  const [feature] = label.split(' が ');
+  return feature || label;
+};
+
+const conditionSummary = (conditions: { label: string; operator: string; value: string | number | boolean; valueTo?: string | number }[]) =>
+  conditions
+    .map((condition) => `${conditionFeatureLabel(condition.label)} ${operatorLabel[condition.operator] ?? condition.operator} ${conditionValueLabel(condition)}`)
+    .join(' かつ ');
+
+const patternActionText = (conversionDelta?: number, lift?: number) => {
+  const parts = [
+    typeof conversionDelta === 'number' ? `平均との差が ${formatPercent(conversionDelta)}` : null,
+    typeof lift === 'number' ? `全体の ${lift.toFixed(2)} 倍` : null
+  ].filter(Boolean);
+
+  if (parts.length === 0) {
+    return '条件に合う顧客を施策候補として確認できます。';
+  }
+
+  return `${parts.join('、')}のため、優先して施策対象にする価値があります。`;
+};
 
 export const ResultsVisualizationScreen = ({
   analysisJobId,
@@ -59,6 +126,14 @@ export const ResultsVisualizationScreen = ({
     [result, selectedSegmentIds]
   );
 
+  const priorityPatterns = useMemo(
+    () =>
+      [...(result?.goldenPatterns ?? [])]
+        .sort((left, right) => (right.conversionDelta ?? 0) - (left.conversionDelta ?? 0) || (right.lift ?? 0) - (left.lift ?? 0))
+        .slice(0, 3),
+    [result]
+  );
+
   const toggleSegment = (segmentId: string) => {
     setSelectedSegmentIds((current) =>
       current.includes(segmentId) ? current.filter((id) => id !== segmentId) : [...current, segmentId]
@@ -80,7 +155,14 @@ export const ResultsVisualizationScreen = ({
   };
 
   if (!result) {
-    return <div className="screen"><Card>{loadError ?? '結果を読み込んでいます。'}</Card></div>;
+    return (
+      <div className="screen">
+        <Card className="loading-panel">
+          <strong>{loadError ?? '分析結果を準備しています。'}</strong>
+          {!loadError ? <p>重要要因、黄金パターン、セグメント候補を読み込んでいます。</p> : null}
+        </Card>
+      </div>
+    );
   }
 
   const completed = result.status === 'completed';
@@ -90,8 +172,8 @@ export const ResultsVisualizationScreen = ({
     <div className="screen">
       <header className="screen-header">
         <div>
-          <h1>結果可視化</h1>
-          <p>分析で見つかった重要要因とパターンを確認します。</p>
+          <h1>施策候補</h1>
+          <p>分析で見つかった成功パターンを、次に試せる顧客グループとして確認します。</p>
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>条件を見直す</Button>
@@ -125,10 +207,44 @@ export const ResultsVisualizationScreen = ({
         <Metric label="ベースライン比改善" value={formatPercent(result.summary.improvementRate)} />
       </div>
 
+      <Card>
+        <div className="panel-heading">
+          <h2>優先して試したい施策</h2>
+          <Badge tone="success">上位 {priorityPatterns.length} 件</Badge>
+        </div>
+        <div className="action-insight-grid">
+          {priorityPatterns.map((pattern, index) => {
+            const linkedSegment = result.segmentRecommendations.find((segment) => segment.sourcePatternId === pattern.id);
+            return (
+              <button
+                key={pattern.id}
+                type="button"
+                className={pattern.id === selectedPatternId ? 'insight-card selected' : 'insight-card'}
+                aria-pressed={pattern.id === selectedPatternId}
+                onClick={() => {
+                  setSelectedPatternId(pattern.id);
+                  if (linkedSegment) {
+                    setSelectedSegmentIds((current) => (current.includes(linkedSegment.id) ? current : [linkedSegment.id]));
+                  }
+                }}
+              >
+                <span className="insight-rank">候補 {index + 1}</span>
+                <strong>{conditionSummary(pattern.conditions)}</strong>
+                <p>{patternActionText(pattern.conversionDelta, pattern.lift)}</p>
+                <div className="card-row">
+                  <Badge tone="success">平均との差 {formatPercent(pattern.conversionDelta)}</Badge>
+                  {linkedSegment ? <Badge tone="info">{formatNumber(linkedSegment.estimatedAudienceSize)} 人</Badge> : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
       <div className="two-column">
         <Card>
           <div className="panel-heading">
-            <h2>重要特徴量ランキング</h2>
+            <h2>成功に効いていそうな要因</h2>
             <Badge tone="info">0-100 正規化</Badge>
           </div>
           <div className="bar-list">
@@ -138,7 +254,7 @@ export const ResultsVisualizationScreen = ({
                 type="button"
                 className={feature.featureKey === selectedFeatureKey ? 'selected' : ''}
                 aria-pressed={feature.featureKey === selectedFeatureKey}
-                aria-label={`${feature.label}: importance ${feature.importanceScore}, direction ${feature.direction}`}
+                aria-label={`${feature.label}: 影響度 ${feature.importanceScore}, 向き ${directionLabel[feature.direction]}`}
                 onClick={() => setSelectedFeatureKey(feature.featureKey)}
               >
                 <span>{feature.label}</span>
@@ -153,13 +269,13 @@ export const ResultsVisualizationScreen = ({
             ))}
           </div>
           <section className="detail-section">
-            <h3>Feature importance table</h3>
+            <h3>要因の詳細</h3>
             <table className="feature-table">
               <thead>
                 <tr>
-                  <th>Feature</th>
-                  <th>Score</th>
-                  <th>Direction</th>
+                  <th>要因</th>
+                  <th>影響度</th>
+                  <th>向き</th>
                 </tr>
               </thead>
               <tbody>
@@ -178,14 +294,14 @@ export const ResultsVisualizationScreen = ({
               <h3>{selectedFeature.label}</h3>
               <p>{selectedFeature.description ?? 'この特徴量は成約率の違いを説明する候補です。'}</p>
               <div className="tag-row">
-                <span>{selectedFeature.category}</span>
-                <span>{selectedFeature.aggregation}</span>
+                <span>{categoryLabel[selectedFeature.category]}</span>
+                <span>{aggregationLabel[selectedFeature.aggregation]}</span>
                 <span>欠損率 {formatPercent(selectedFeature.missingRate)}</span>
               </div>
             </section>
           ) : null}
           <section className="detail-section">
-            <h3>相互作用</h3>
+            <h3>組み合わせで効く要因</h3>
             {result.interactionPairs.map((pair) => (
               <p className="notice" key={`${pair.leftFeatureKey}-${pair.rightFeatureKey}`}>{pair.summary}</p>
             ))}
@@ -194,7 +310,7 @@ export const ResultsVisualizationScreen = ({
 
         <Card>
           <div className="panel-heading">
-            <h2>パターンとアクション候補</h2>
+            <h2>黄金パターン</h2>
             {!completed ? <Badge tone="warning">暫定</Badge> : null}
           </div>
           <section className="pattern-list">
@@ -206,18 +322,18 @@ export const ResultsVisualizationScreen = ({
                 aria-pressed={pattern.id === selectedPatternId}
                 onClick={() => setSelectedPatternId(pattern.id)}
               >
-                <strong>{pattern.title}</strong>
+                <strong>{conditionSummary(pattern.conditions)}</strong>
                 <div className="chip-list">
                   {pattern.conditions.map((condition) => (
                     <span className="chip strong" key={`${pattern.id}-${condition.featureKey}-${condition.label}`}>
-                      {condition.label}
+                      {conditionFeatureLabel(condition.label)}
                     </span>
                   ))}
                 </div>
-                <p>{pattern.description}</p>
+                <p>{patternActionText(pattern.conversionDelta, pattern.lift)}</p>
                 <div className="card-row">
-                  <Badge tone="success">support {formatPercent(pattern.supportRate)}</Badge>
-                  {pattern.lift ? <Badge tone="info">lift {pattern.lift.toFixed(2)}</Badge> : null}
+                  <Badge tone="success">対象割合 {formatPercent(pattern.supportRate)}</Badge>
+                  {pattern.lift ? <Badge tone="info">全体比 {pattern.lift.toFixed(2)} 倍</Badge> : null}
                   <Badge tone="warning">成約率差 {formatPercent(pattern.conversionDelta)}</Badge>
                 </div>
               </button>
@@ -229,9 +345,9 @@ export const ResultsVisualizationScreen = ({
               <div className="data-table">
                 {selectedPattern.conditions.map((condition) => (
                   <div className="sample-row" key={`${condition.featureKey}-${condition.label}`}>
-                    <strong>{condition.label}</strong>
+                    <strong>{conditionFeatureLabel(condition.label)}</strong>
                     <span>{conditionValueLabel(condition)}</span>
-                    <small>operator: {condition.operator}</small>
+                    <small>判定: {operatorLabel[condition.operator] ?? condition.operator}</small>
                   </div>
                 ))}
               </div>

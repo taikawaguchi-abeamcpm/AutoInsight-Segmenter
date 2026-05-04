@@ -36,6 +36,7 @@ export const DatasetSelectionScreen = ({
   const [statusFilter, setStatusFilter] = useState<'all' | DatasetConnectionStatus>('all');
   const [listMode, setListMode] = useState<'all' | 'recent' | 'recommended'>('recommended');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewApiError, setPreviewApiError] = useState<ApiError | null>(null);
   const [previewRetryNonce, setPreviewRetryNonce] = useState(0);
@@ -137,14 +138,19 @@ export const DatasetSelectionScreen = ({
       .sort((left, right) => (right.recommendationScore ?? 0) - (left.recommendationScore ?? 0));
   }, [datasets, listMode, searchQuery, statusFilter]);
 
-  const canSubmit = selected?.connectionStatus === 'ready';
+  const canSubmit = selected?.connectionStatus === 'ready' && !submitting;
 
   const submit = async () => {
     if (!selected || !canSubmit) {
       return;
     }
 
-    onSelected(await datasetApi.selectDataset(selected));
+    setSubmitting(true);
+    try {
+      onSelected(await datasetApi.selectDataset(selected));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -168,11 +174,20 @@ export const DatasetSelectionScreen = ({
         <Field label="キーワード">
           <div className="input-with-icon">
             <Search size={16} />
-            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="データセット名、説明、タグ" />
+            <input
+              aria-label="データセット検索キーワード"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="データセット名、説明、タグ"
+            />
           </div>
         </Field>
         <Field label="ステータス">
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | DatasetConnectionStatus)}>
+          <select
+            aria-label="データセットのステータス"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | DatasetConnectionStatus)}
+          >
             <option value="all">すべて</option>
             <option value="ready">利用可能</option>
             <option value="warning">警告あり</option>
@@ -207,6 +222,7 @@ export const DatasetSelectionScreen = ({
               type="button"
               className={`dataset-card ${dataset.id === selectedId ? 'selected' : ''}`}
               aria-pressed={dataset.id === selectedId}
+              aria-label={`${dataset.displayName}を選択`}
               onClick={() => setSelectedId(dataset.id)}
               disabled={dataset.connectionStatus === 'error'}
               onDoubleClick={submit}
@@ -299,9 +315,9 @@ export const DatasetSelectionScreen = ({
 
       <footer className="action-bar">
         <span>{filtered.length} 件を表示</span>
-        <strong>{selected ? `${selected.displayName} / ${statusLabel[selected.connectionStatus]}` : '未選択'}</strong>
+        <strong>{submitting ? '意味付け画面を準備しています。' : selected ? `${selected.displayName} / ${statusLabel[selected.connectionStatus]}` : '未選択'}</strong>
         <Button onClick={submit} disabled={!canSubmit}>
-          このデータを使う
+          {submitting ? '準備中' : 'このデータを使う'}
         </Button>
       </footer>
     </div>

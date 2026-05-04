@@ -67,10 +67,11 @@ export const EmptyState = ({ title, description }: { title: string; description:
   </div>
 );
 
-export const formatNumber = (value?: number) => (typeof value === 'number' ? new Intl.NumberFormat('ja-JP').format(value) : '-');
+export const formatNumber = (value?: number, options?: Intl.NumberFormatOptions) =>
+  typeof value === 'number' ? new Intl.NumberFormat('ja-JP', options).format(value) : '-';
 
-export const formatPercent = (value?: number) =>
-  typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '-';
+export const formatPercent = (value?: number, fractionDigits = 1) =>
+  typeof value === 'number' ? `${(value * 100).toFixed(fractionDigits)}%` : '-';
 
 export const formatDateTime = (value?: string) =>
   value
