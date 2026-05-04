@@ -30,7 +30,10 @@ const scopedAnalysisInputs = (
           .map((column) => column.featureConfig?.featureKey ?? column.columnId)
       );
   const selectedFeatureMappings = mapping.columnMappings.filter(
-    (column) => column.columnRole === 'feature' && selectedFeatureKeys.has(column.featureConfig?.featureKey ?? column.columnId)
+    (column) =>
+      config.mode === 'autopilot'
+        ? !['target', 'excluded'].includes(column.columnRole)
+        : column.columnRole === 'feature' && selectedFeatureKeys.has(column.featureConfig?.featureKey ?? column.columnId)
   );
   const requiredTableIds = new Set([
     ...targetMappings.map((column) => column.tableId),

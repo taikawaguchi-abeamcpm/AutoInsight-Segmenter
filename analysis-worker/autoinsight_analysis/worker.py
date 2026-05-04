@@ -379,6 +379,9 @@ def build_feature_descriptors(
     table_mapping_by_id = {table["tableId"]: table for table in mapping.get("tableMappings", [])}
     selected_keys = set(config.get("selectedFeatureKeys", [])) if config and config.get("mode") == "custom" else None
     blocked_keys = config_blocked_keys(config)
+    if config and config.get("mode") == "autopilot" and config.get("allowGeneratedFeatures", True):
+        return build_autopilot_feature_descriptors(mapping, dataset, target, target_config, config, diagnostics)
+
     features: list[dict[str, Any]] = []
 
     for mapped_column in mapping.get("columnMappings", []):
@@ -420,6 +423,154 @@ def build_feature_descriptors(
             "plan": plan,
         })
     return features
+
+
+def mapped_column_by_id(mapping: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        item.get("columnId"): item
+        for item in mapping.get("columnMappings", [])
+        if item.get("columnId")
+    }
+
+
+def is_id_like_column(column: dict[str, Any]) -> bool:
+    name = str(column.get("name") or "").lower()
+    return column.get("isPrimaryKey") or name == "id" or name.endswith("_id") or name.endswith("id")
+
+
+def is_autopilot_candidate_column(
+    mapped_column: dict[str, Any],
+    column: dict[str, Any],
+    target: dict[str, Any],
+) -> bool:
+    if column.get("id") == target["column"].get("id"):
+        return False
+    if mapped_column.get("columnRole") in {"target", "excluded", "customer_id"}:
+        return False
+    if column.get("dataType") == "array":
+        return False
+    if is_id_like_column(column) and mapped_column.get("columnRole") != "event_time":
+        return False
+    return True
+
+
+def autopilot_time_windows_for_feature(table_category: str, has_event_time: bool) -> list[dict[str, Any] | None]:
+    if not has_event_time or table_category == "profile":
+        return [None]
+    return [
+        {"unit": "day", "value": 30},
+        {"unit": "day", "value": 90},
+    ]
+
+
+def autopilot_feature_key(column: dict[str, Any], aggregation: str, window: dict[str, Any] | None, derived_kind: str | None = None) -> str:
+    base = normalize_identifier(column.get("name")) or normalize_identifier(column.get("id")) or "feature"
+    suffix = derived_kind or aggregation
+    if window:
+        suffix = f"{suffix}_{int(window.get('value') or 0)}{str(window.get('unit') or 'day')[0]}"
+    return f"auto_{base}_{suffix}"
+
+
+def build_autopilot_feature_descriptors(
+    mapping: dict[str, Any],
+    dataset: dict[str, Any],
+    target: dict[str, Any],
+    target_config: dict[str, Any],
+    config: dict[str, Any],
+    diagnostics: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    columns = column_id_map(dataset)
+    mapped_by_column = mapped_column_by_id(mapping)
+    table_mapping_by_id = {table["tableId"]: table for table in mapping.get("tableMappings", [])}
+    blocked_keys = config_blocked_keys(config)
+    event_time_columns = resolve_event_time_columns_by_table(mapping, dataset)
+    candidate_limit = max(1, int(config.get("candidateFeatureLimit") or 80))
+    generated: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+
+    def add_feature(item: dict[str, Any], aggregation: str, window: dict[str, Any] | None = None, derived_kind: str | None = None) -> None:
+        column = item["column"]
+        mapped_column = mapped_by_column.get(column.get("id")) or {}
+        table = item["table"]
+        table_mapping = table_mapping_by_id.get(table.get("id")) or {}
+        feature_key = autopilot_feature_key(column, aggregation, window, derived_kind)
+        if feature_key in seen_keys or feature_key in blocked_keys or str(column.get("id")) in blocked_keys:
+            return
+        if is_leakage_like_feature(mapped_column, {"featureKey": feature_key, "label": column.get("displayName")}, item, target, target_config):
+            if diagnostics is not None:
+                diagnostics.setdefault("autoBlockedFeatureKeys", []).append(feature_key)
+            return
+        plan = find_feature_plan(mapping, dataset, target["table"]["id"], table["id"])
+        if not plan:
+            return
+        seen_keys.add(feature_key)
+        data_type = column.get("dataType")
+        value_type = "numeric" if data_type in {"integer", "float", "boolean"} or aggregation in {"count", "distinct_count"} or derived_kind == "recency_days" else "categorical"
+        generated.append({
+            "featureKey": feature_key,
+            "label": (
+                f"{column.get('displayName') or column.get('name')} recency days"
+                if derived_kind == "recency_days"
+                else f"{column.get('displayName') or column.get('name')} {aggregation}"
+            ),
+            "sourceColumnName": column.get("name"),
+            "sourceColumnId": column.get("id"),
+            "sourceTableId": table.get("id"),
+            "sourceTableName": table.get("name"),
+            "sourceTableDisplayName": table.get("displayName"),
+            "dataType": data_type,
+            "valueType": value_type,
+            "valueLabels": None,
+            "entityRole": table_mapping.get("entityRole"),
+            "category": category_for_entity_role(table_mapping.get("entityRole"), table.get("name", "")),
+            "aggregation": aggregation,
+            "timeWindow": window,
+            "derivedKind": derived_kind,
+            "autopilotGenerated": True,
+            "plan": plan,
+        })
+
+    for table in dataset.get("tables", []):
+        table_mapping = table_mapping_by_id.get(table.get("id")) or {}
+        table_category = category_for_entity_role(table_mapping.get("entityRole"), table.get("name", ""))
+        table_has_event_time = table.get("id") in event_time_columns
+        for column in table.get("columns", []):
+            mapped_column = mapped_by_column.get(column.get("id")) or {}
+            if not is_autopilot_candidate_column(mapped_column, column, target):
+                continue
+            if mapped_column.get("columnRole") == "event_time":
+                if table.get("id") != target["table"].get("id") and table_has_event_time:
+                    add_feature({"table": table, "column": column}, "latest", None, "recency_days")
+                continue
+
+            item = {"table": table, "column": column}
+            data_type = column.get("dataType")
+            same_table = table.get("id") == target["table"].get("id")
+            windows = autopilot_time_windows_for_feature(table_category, table_has_event_time)
+            if same_table:
+                add_feature(item, "latest" if data_type in {"integer", "float", "boolean"} else "none")
+                continue
+
+            add_feature(item, "count")
+            if data_type in {"integer", "float"}:
+                for aggregation in ["sum", "avg"]:
+                    for window in windows:
+                        add_feature(item, aggregation, window)
+            elif data_type in {"string", "boolean"}:
+                add_feature(item, "distinct_count")
+                for window in windows:
+                    if window:
+                        add_feature(item, "count", window)
+                add_feature(item, "latest")
+
+            if len(generated) >= candidate_limit:
+                break
+        if len(generated) >= candidate_limit:
+            break
+
+    if diagnostics is not None:
+        diagnostics["autopilotGeneratedFeatureCount"] = len(generated)
+    return generated[:candidate_limit]
 
 
 def resolve_event_time_columns_by_table(mapping: dict[str, Any], dataset: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -528,7 +679,7 @@ def is_sequence_mining_feature(feature: dict[str, Any], event_time_columns_by_ta
     )
 
 
-def aggregate_values(values: list[Any], feature: dict[str, Any]) -> Any:
+def aggregate_values(values: list[Any], feature: dict[str, Any], target_at: float | None = None) -> Any:
     present = []
     for item in values:
         normalized = item if isinstance(item, dict) and "value" in item else {"value": item}
@@ -539,6 +690,13 @@ def aggregate_values(values: list[Any], feature: dict[str, Any]) -> Any:
         return None
 
     aggregation = feature.get("aggregation") or "latest"
+    if feature.get("derivedKind") == "recency_days":
+        dated_values = [item.get("at") for item in present if item.get("at") is not None]
+        if target_at is None or not dated_values:
+            return None
+        latest_at = max(item for item in dated_values if item <= target_at) if any(item <= target_at for item in dated_values) else None
+        return round((target_at - latest_at) / (24 * 60 * 60 * 1000), 2) if latest_at is not None else None
+
     raw_values = [item.get("value") for item in present]
     numeric_values = [value for value in (to_number(item) for item in raw_values) if value is not None]
     numeric_feature = feature.get("valueType") == "numeric"
@@ -677,7 +835,7 @@ def materialize_analysis_rows(
                         for item in sorted(row_values, key=lambda item: item.get("at") if item.get("at") is not None else 0)
                         if not is_missing(item.get("value"))
                     ]
-                    aggregated = aggregate_values(row_values, feature)
+                    aggregated = aggregate_values(row_values, feature, row.get("__targetAt"))
                     row[feature["featureKey"]] = aggregated
                     if is_sequence_mining_feature(feature, event_time_columns_by_table):
                         row["__sequences"][feature["featureKey"]] = ordered_values
@@ -721,7 +879,7 @@ def collapse_rows_to_analysis_unit(rows: list[dict[str, Any]], features: list[di
             ]
             if raw_values:
                 distinct_values = {str(item["value"]) for item in raw_values}
-                row[feature_key] = raw_values[0]["value"] if len(distinct_values) == 1 else aggregate_values(raw_values, feature)
+                row[feature_key] = raw_values[0]["value"] if len(distinct_values) == 1 else aggregate_values(raw_values, feature, cutoff_at)
 
             sequences = [
                 (item.get("__sequences") or {}).get(feature_key) or []
@@ -1109,6 +1267,111 @@ def train_feature_importance_model(rows: list[dict[str, Any]], features: list[di
     }
 
 
+def autopilot_feature_subset(features: list[dict[str, Any]], strategy: str, limit: int) -> list[dict[str, Any]]:
+    if strategy == "explainability":
+        ranked = sorted(
+            features,
+            key=lambda feature: (
+                feature.get("plan", {}).get("kind") != "same",
+                feature.get("aggregation") not in {"none", "latest", "count"},
+                bool(feature.get("timeWindow")),
+                feature.get("featureKey"),
+            ),
+        )
+    elif strategy == "segmentability":
+        ranked = sorted(
+            features,
+            key=lambda feature: (
+                feature.get("category") not in {"transaction", "behavior", "engagement"},
+                feature.get("aggregation") not in {"count", "sum", "avg", "distinct_count"},
+                feature.get("featureKey"),
+            ),
+        )
+    else:
+        ranked = list(features)
+    return ranked[:max(1, limit)]
+
+
+def score_autopilot_candidate(model: dict[str, Any], features: list[dict[str, Any]], strategy: str, priority: str) -> float:
+    auc = model.get("rocAuc")
+    pr_auc = model.get("prAuc")
+    metric_score = 0.0
+    if auc is not None:
+        metric_score += max(0.0, auc - 0.5) * 120
+    if pr_auc is not None:
+        metric_score += pr_auc * 40
+    explainability = 100 / math.sqrt(max(1, len(features)))
+    segmentability = sum(1 for feature in features if feature.get("category") in {"transaction", "behavior", "engagement"}) / max(1, len(features)) * 100
+    reproducibility = 100 - min(80, len(features))
+
+    weights = {
+        "explainability": (0.45, 0.35, 0.10, 0.10),
+        "segmentability": (0.45, 0.10, 0.35, 0.10),
+        "reproducibility": (0.35, 0.15, 0.10, 0.40),
+    }.get(priority, (0.55, 0.15, 0.20, 0.10))
+    metric_w, explain_w, segment_w, reproducible_w = weights
+    strategy_bonus = 5 if strategy == priority or (priority == "balanced" and strategy == "accuracy") else 0
+    return (
+        metric_score * metric_w
+        + explainability * explain_w
+        + segmentability * segment_w
+        + reproducibility * reproducible_w
+        + strategy_bonus
+    )
+
+
+def choose_autopilot_candidate_model(
+    rows: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    config: dict[str, Any],
+    seed: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    if config.get("mode") != "autopilot":
+        model = train_feature_importance_model(rows, features, seed)
+        return features, model, []
+
+    candidate_limit = max(1, int(config.get("candidateFeatureLimit") or len(features) or 1))
+    priority = config.get("businessPriority") or "segmentability"
+    strategies = [
+        ("accuracy", min(candidate_limit, len(features))),
+        ("explainability", min(max(10, candidate_limit // 2), len(features))),
+        ("segmentability", min(max(15, candidate_limit), len(features))),
+    ]
+    candidates = []
+    for strategy, limit in strategies:
+        subset = autopilot_feature_subset(features, strategy, limit)
+        model = train_feature_importance_model(rows, subset, seed)
+        candidates.append({
+            "strategy": strategy,
+            "featureCount": len(subset),
+            "score": score_autopilot_candidate(model, subset, strategy, priority),
+            "rocAuc": model.get("rocAuc"),
+            "prAuc": model.get("prAuc"),
+            "validationLogLoss": model.get("validationLogLoss"),
+            "features": subset,
+            "model": model,
+        })
+
+    selected = max(candidates, key=lambda item: item["score"]) if candidates else {
+        "strategy": "accuracy",
+        "features": features,
+        "model": train_feature_importance_model(rows, features, seed),
+        "score": 0,
+    }
+    metadata = [
+        {
+            "strategy": item["strategy"],
+            "featureCount": item["featureCount"],
+            "score": round(item["score"], 4),
+            "rocAuc": item.get("rocAuc"),
+            "prAuc": item.get("prAuc"),
+            "validationLogLoss": item.get("validationLogLoss"),
+        }
+        for item in candidates
+    ]
+    return selected["features"], selected["model"], metadata
+
+
 def matches_condition(row: dict[str, Any], condition: dict[str, Any]) -> bool:
     value = row.get(condition["featureKey"])
     operator = condition.get("operator")
@@ -1464,11 +1727,16 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
     min_group_count = max(3, math.ceil(len(rows) * 0.02))
     importances = []
     random_seed = int(config.get("randomSeed") or 42)
-    model_training = train_feature_importance_model(
+    model_candidate_features = [feature for feature in features if not is_sequence_mining_feature(feature, event_time_columns_by_table)]
+    selected_model_features, model_training, autopilot_candidates = choose_autopilot_candidate_model(
         rows,
-        [feature for feature in features if not is_sequence_mining_feature(feature, event_time_columns_by_table)],
+        model_candidate_features,
+        config,
         random_seed,
     )
+    if config.get("mode") == "autopilot":
+        features = selected_model_features
+    diagnostics["autopilotCandidateModels"] = autopilot_candidates
     model_scores = model_training.get("modelFeatureImportances") or model_training.get("featureImportances", {})
     permutation_scores = model_training.get("permutationFeatureImportances") or {}
     hybrid_scores = model_training.get("hybridFeatureImportances") or model_training.get("featureImportances", {})
@@ -1598,6 +1866,9 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
             "segmentObjective": segment_objective,
             "randomSeed": random_seed,
             "importanceMethod": importance_method,
+            "autopilotGeneratedFeatureCount": diagnostics.get("autopilotGeneratedFeatureCount"),
+            "autopilotCandidateModels": diagnostics.get("autopilotCandidateModels"),
+            "autopilotSelectedStrategy": (max(autopilot_candidates, key=lambda item: item.get("score", 0)).get("strategy") if autopilot_candidates else None),
         },
     }
 

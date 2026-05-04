@@ -104,6 +104,16 @@ export interface AnalysisModelMetadata {
   segmentObjective?: 'unconverted_targeting' | 'all_matching' | 'success_profile';
   randomSeed?: number;
   importanceMethod?: 'model_based' | 'permutation' | 'hybrid';
+  autopilotGeneratedFeatureCount?: number;
+  autopilotSelectedStrategy?: 'accuracy' | 'explainability' | 'segmentability' | null;
+  autopilotCandidateModels?: Array<{
+    strategy: 'accuracy' | 'explainability' | 'segmentability';
+    featureCount: number;
+    score: number;
+    rocAuc?: number | null;
+    prAuc?: number | null;
+    validationLogLoss?: number | null;
+  }>;
 }
 
 export interface SelectedSegmentContext {
