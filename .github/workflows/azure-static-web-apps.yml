@@ -41,8 +41,29 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --target analysis-function/.python_packages/lib/site-packages -r analysis-function/requirements.txt
           python - <<'PY'
+          import importlib.util
+          import inspect
+          import json
+          import pathlib
           import sys
+
           sys.path.insert(0, 'analysis-function')
+          for function_json in pathlib.Path('analysis-function').glob('*/function.json'):
+              config = json.loads(function_json.read_text())
+              input_names = [
+                  binding['name']
+                  for binding in config['bindings']
+                  if binding.get('direction') == 'in'
+              ]
+              module_path = function_json.parent / config['scriptFile']
+              spec = importlib.util.spec_from_file_location(function_json.parent.name, module_path)
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              parameters = inspect.signature(module.main).parameters
+              missing = [name for name in input_names if name not in parameters]
+              if missing:
+                  raise RuntimeError(f'{module_path} main(...) is missing binding parameter(s): {missing}')
+
           from autoinsight_analysis.worker import build_real_analysis_result
           assert callable(build_real_analysis_result)
           PY

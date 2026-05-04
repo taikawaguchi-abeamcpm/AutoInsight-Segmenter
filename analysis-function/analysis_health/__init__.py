@@ -1,7 +1,7 @@
 import json
 
 
-def main(_req):
+def main(req):
     return json.dumps(
         {
             "status": "ok",
