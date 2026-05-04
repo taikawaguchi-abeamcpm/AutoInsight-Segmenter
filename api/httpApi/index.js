@@ -40,6 +40,67 @@ const compactErrorText = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const truncateText = (value, maxLength = 2000) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+};
+
+const toJsonSafeValue = (value, depth = 0) => {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return truncateText(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) {
+    if (depth > 8) return [];
+    return value.map((item) => toJsonSafeValue(item, depth + 1)).filter((item) => item !== undefined);
+  }
+  if (typeof value === 'object') {
+    if (depth > 8) return {};
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, item]) => [key, toJsonSafeValue(item, depth + 1)])
+        .filter(([, item]) => item !== undefined)
+    );
+  }
+
+  return String(value);
+};
+
+const normalizeAnalysisResultForStorage = ({ analysisResult, analysisJobId, runId, mapping, dataset, config }) => {
+  const normalized = toJsonSafeValue({
+    ...analysisResult,
+    id: analysisResult?.analysisJobId || analysisJobId,
+    analysisJobId: analysisResult?.analysisJobId || analysisJobId,
+    runId: analysisResult?.runId || runId,
+    datasetId: analysisResult?.datasetId || dataset?.id || mapping?.datasetId || 'unknown',
+    mappingDocumentId: analysisResult?.mappingDocumentId || mapping?.id || 'unknown',
+    mode: analysisResult?.mode || config?.mode || 'custom',
+    status: analysisResult?.status || 'failed',
+    progressPercent: analysisResult?.progressPercent ?? 100,
+    message: analysisResult?.message || 'Analysis finished without a message.',
+    summary: analysisResult?.summary || {
+      analyzedRowCount: 0,
+      topFeatureCount: 0,
+      validPatternCount: 0,
+      recommendedSegmentCount: 0
+    },
+    featureImportances: (analysisResult?.featureImportances || []).slice(0, 100),
+    interactionPairs: (analysisResult?.interactionPairs || []).slice(0, 50),
+    goldenPatterns: (analysisResult?.goldenPatterns || []).slice(0, 50),
+    segmentRecommendations: (analysisResult?.segmentRecommendations || []).slice(0, 50)
+  });
+
+  return {
+    ...normalized,
+    id: normalized.analysisJobId,
+    jobId: normalized.analysisJobId,
+    partitionKey: normalized.analysisJobId
+  };
+};
+
 const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, message, detail }) => {
   const timestamp = nowIso();
   const safeMessage = looksLikeHtml(message)
@@ -552,26 +613,58 @@ const routes = {
       });
     }
 
-    await upsert('analysisResults', {
-      ...analysisResult,
-      id: analysisResult.analysisJobId,
-      jobId: analysisResult.analysisJobId,
-      partitionKey: analysisResult.analysisJobId,
-      updatedAt: now
+    let storedResult = normalizeAnalysisResultForStorage({
+      analysisResult,
+      analysisJobId,
+      runId,
+      mapping: resolvedMapping,
+      dataset: resolvedDataset,
+      config
     });
+
+    try {
+      await upsert('analysisResults', {
+        ...storedResult,
+        updatedAt: now
+      });
+    } catch (err) {
+      context.log.error('Analysis result persistence failed', err);
+      analysisResult = failedAnalysisResult({
+        analysisJobId,
+        runId,
+        mapping: resolvedMapping,
+        dataset: resolvedDataset,
+        config,
+        message: 'Analysis completed, but the result could not be saved. The stored result was reduced to failure diagnostics.',
+        detail: err.message || 'Cosmos analysis result persistence failed.'
+      });
+      storedResult = normalizeAnalysisResultForStorage({
+        analysisResult,
+        analysisJobId,
+        runId,
+        mapping: resolvedMapping,
+        dataset: resolvedDataset,
+        config
+      });
+      await upsert('analysisResults', {
+        ...storedResult,
+        updatedAt: now
+      });
+    }
+
     await upsert('analysisRuns', {
       ...analysisRun,
-      status: analysisResult?.status || 'failed',
-      modelVersion: analysisResult?.modelMetadata?.modelVersion,
+      status: storedResult?.status || 'failed',
+      modelVersion: storedResult?.modelMetadata?.modelVersion,
       featureGenerationVersion: 'python-worker-v1',
       updatedAt: now,
-      completedAt: analysisResult?.completedAt
+      completedAt: storedResult?.completedAt
     });
 
     json(context, 200, {
       analysisJobId,
       runId,
-      status: analysisResult?.status || 'failed',
+      status: storedResult?.status || 'failed',
       startedAt: now,
       estimatedDurationSeconds
     });

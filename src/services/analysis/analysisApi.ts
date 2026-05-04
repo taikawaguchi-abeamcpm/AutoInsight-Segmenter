@@ -15,6 +15,81 @@ export interface AnalysisBootstrap {
   defaultConfig: AnalysisRunConfig | null;
 }
 
+const scopedAnalysisInputs = (
+  mapping: SemanticMappingDocument,
+  dataset: FabricDataset,
+  config: AnalysisRunConfig
+): { mapping: SemanticMappingDocument; dataset: FabricDataset } => {
+  const targetMappings = mapping.columnMappings.filter((column) => column.columnRole === 'target' || column.targetConfig);
+  const selectedFeatureKeys = config.mode === 'custom'
+    ? new Set(config.selectedFeatureKeys)
+    : new Set(
+        mapping.columnMappings
+          .filter((column) => column.columnRole === 'feature' && column.featureConfig?.enabled !== false)
+          .filter((column) => !config.blockedColumnKeys.includes(column.featureConfig?.featureKey ?? column.columnId))
+          .map((column) => column.featureConfig?.featureKey ?? column.columnId)
+      );
+  const selectedFeatureMappings = mapping.columnMappings.filter(
+    (column) => column.columnRole === 'feature' && selectedFeatureKeys.has(column.featureConfig?.featureKey ?? column.columnId)
+  );
+  const requiredTableIds = new Set([
+    ...targetMappings.map((column) => column.tableId),
+    ...selectedFeatureMappings.map((column) => column.tableId)
+  ]);
+  const requiredColumnIds = new Set([
+    ...targetMappings.map((column) => column.columnId),
+    ...selectedFeatureMappings.map((column) => column.columnId)
+  ]);
+
+  mapping.tableMappings
+    .filter((table) => requiredTableIds.has(table.tableId))
+    .forEach((table) => {
+      [table.primaryKeyColumnId, table.customerJoinColumnId].filter(Boolean).forEach((columnId) => requiredColumnIds.add(columnId as string));
+    });
+
+  mapping.joinDefinitions
+    .filter((join) => requiredTableIds.has(join.fromTableId) || requiredTableIds.has(join.toTableId))
+    .forEach((join) => {
+      requiredTableIds.add(join.fromTableId);
+      requiredTableIds.add(join.toTableId);
+      join.fromColumnIds.forEach((columnId) => requiredColumnIds.add(columnId));
+      join.toColumnIds.forEach((columnId) => requiredColumnIds.add(columnId));
+    });
+
+  mapping.columnMappings
+    .filter((column) => requiredTableIds.has(column.tableId) && ['customer_id', 'event_time'].includes(column.columnRole))
+    .forEach((column) => requiredColumnIds.add(column.columnId));
+
+  const scopedDataset = {
+    ...dataset,
+    tables: dataset.tables
+      .filter((table) => requiredTableIds.has(table.id))
+      .map((table) => ({
+        ...table,
+        columns: table.columns.filter((column) => requiredColumnIds.has(column.id))
+      }))
+      .filter((table) => table.columns.length > 0)
+  };
+  const scopedTableIds = new Set(scopedDataset.tables.map((table) => table.id));
+  const scopedColumnIds = new Set(scopedDataset.tables.flatMap((table) => table.columns.map((column) => column.id)));
+
+  return {
+    dataset: scopedDataset,
+    mapping: {
+      ...mapping,
+      tableMappings: mapping.tableMappings.filter((table) => scopedTableIds.has(table.tableId)),
+      columnMappings: mapping.columnMappings.filter((column) => scopedTableIds.has(column.tableId) && scopedColumnIds.has(column.columnId)),
+      joinDefinitions: mapping.joinDefinitions.filter(
+        (join) =>
+          scopedTableIds.has(join.fromTableId) &&
+          scopedTableIds.has(join.toTableId) &&
+          join.fromColumnIds.every((columnId) => scopedColumnIds.has(columnId)) &&
+          join.toColumnIds.every((columnId) => scopedColumnIds.has(columnId))
+      )
+    }
+  };
+};
+
 export const createDefaultConfig = (summary: AnalysisInputSummary, mode: AnalysisMode): AnalysisRunConfig => {
   const featureKeys = summary.features.filter((feature) => feature.enabled).map((feature) => feature.featureKey);
 
@@ -132,12 +207,13 @@ export const analysisApi = {
 
   async start(mappingOrId: string | SemanticMappingDocument, config: AnalysisRunConfig, options: RequestOptions = {}, dataset?: FabricDataset): Promise<StartAnalysisResult> {
     const mappingDocumentId = typeof mappingOrId === 'string' ? mappingOrId : mappingOrId.id;
+    const scoped = typeof mappingOrId === 'string' || !dataset ? null : scopedAnalysisInputs(mappingOrId, dataset, config);
     const response = await apiRequest<StartAnalysisResult>('/analysis/start', {
       method: 'POST',
       body: JSON.stringify({
         mappingDocumentId,
-        mapping: typeof mappingOrId === 'string' ? undefined : mappingOrId,
-        dataset,
+        mapping: scoped?.mapping ?? (typeof mappingOrId === 'string' ? undefined : mappingOrId),
+        dataset: scoped?.dataset ?? dataset,
         config
       }),
       signal: options.signal

@@ -216,4 +216,6 @@ If `configured` is `false`, set `ANALYSIS_WORKER_URL` on the Static Web App. If 
 
 ## Failure Behavior
 
-If the Python worker URL is configured and the worker fails, `/api/analysis/start` returns an API error. This is intentional so Python runtime/deployment issues are visible instead of silently using JavaScript analysis.
+If the Python worker URL is configured and the worker fails during an analysis run, `/api/analysis/start` stores a failed analysis result instead of silently using JavaScript analysis.
+
+For large Fabric schemas, the browser sends only the columns needed by the selected target, features, time keys, and joins to `/api/analysis/start`. The API also normalizes analysis results before writing to Cosmos DB and falls back to a compact failed result if the full result cannot be persisted.

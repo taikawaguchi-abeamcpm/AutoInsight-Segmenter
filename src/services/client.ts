@@ -57,6 +57,24 @@ export const isApiError = (error: unknown): error is ApiError =>
   'message' in error &&
   'correlationId' in error;
 
+const readPayload = async (response: Response): Promise<unknown> => {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => null);
+  }
+
+  const text = await response.text().catch(() => '');
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T | null> => {
   const url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
@@ -81,8 +99,7 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     return null;
   }
 
-  const contentType = response.headers.get('content-type') ?? '';
-  const payload = contentType.includes('application/json') ? await response.json() : null;
+  const payload = await readPayload(response);
 
   if (!response.ok) {
     if (payload && isApiError(payload)) {
