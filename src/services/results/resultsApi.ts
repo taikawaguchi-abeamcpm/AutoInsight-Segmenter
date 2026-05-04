@@ -30,5 +30,19 @@ export const resultsApi = {
 
     await delay(120, options.signal);
     return context;
+  },
+
+  async saveResult(result: AnalysisResultDocument, options: RequestOptions = {}): Promise<AnalysisResultDocument> {
+    const response = await apiRequest<AnalysisResultDocument>('/analysis-results', {
+      method: 'POST',
+      body: JSON.stringify(result),
+      signal: options.signal
+    });
+    if (response) {
+      return response;
+    }
+
+    await delay(120, options.signal);
+    return result;
   }
 };

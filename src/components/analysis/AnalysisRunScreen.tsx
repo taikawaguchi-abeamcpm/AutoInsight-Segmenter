@@ -73,6 +73,7 @@ export const AnalysisRunScreen = ({
   const [validation, setValidation] = useState<AnalysisRunValidation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -198,6 +199,18 @@ export const AnalysisRunScreen = ({
     }
   };
 
+  const saveDraft = () => {
+    if (!summary || !config) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      `autoinsight-analysis-draft-${summary.mappingDocumentId}`,
+      JSON.stringify({ config, savedAt: new Date().toISOString() })
+    );
+    setDraftMessage('分析条件の下書きをこのブラウザに保存しました。');
+  };
+
   if (!summary || !config) {
     return (
       <div className="screen">
@@ -220,7 +233,7 @@ export const AnalysisRunScreen = ({
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>意味付けへ戻る</Button>
-          <Button variant="secondary"><Save size={16} /> 下書き保存</Button>
+          <Button variant="secondary" onClick={saveDraft}><Save size={16} /> 下書き保存</Button>
           <Button onClick={start} disabled={submitting || validation?.valid === false}>
             <Play size={16} /> {submitting ? '分析を実行中' : '実験を開始'}
           </Button>
@@ -241,6 +254,7 @@ export const AnalysisRunScreen = ({
           </button>
         ))}
       </div>
+      {draftMessage ? <p className="notice success">{draftMessage}</p> : null}
 
       <div className="two-column">
         <Card>
@@ -360,6 +374,7 @@ export const AnalysisRunScreen = ({
               <label className="check-row">
                 <input
                   type="checkbox"
+                  aria-label="自動生成特徴量を含める"
                   checked={config.allowGeneratedFeatures}
                   onChange={(event) => updateConfig({ ...config, allowGeneratedFeatures: event.target.checked })}
                 />
@@ -368,6 +383,7 @@ export const AnalysisRunScreen = ({
               <label className="check-row">
                 <input
                   type="checkbox"
+                  aria-label="高欠損列を除外"
                   checked={config.excludeHighMissingColumns}
                   onChange={(event) => updateConfig({ ...config, excludeHighMissingColumns: event.target.checked })}
                 />

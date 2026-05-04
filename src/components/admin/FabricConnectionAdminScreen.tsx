@@ -32,6 +32,17 @@ const initialDraft: FabricConnectionDraft = {
   clientSecret: ''
 };
 
+const endpointSummary = (endpointUrl: string) => {
+  try {
+    const url = new URL(endpointUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const apiName = segments.length >= 2 ? segments[segments.length - 2] : undefined;
+    return `${url.hostname}${apiName ? ` / ${apiName}` : ''}`;
+  } catch {
+    return endpointUrl;
+  }
+};
+
 export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) => {
   const [connections, setConnections] = useState<FabricConnectionConfig[]>([]);
   const [draft, setDraft] = useState<FabricConnectionDraft>(initialDraft);
@@ -202,7 +213,7 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
                   <h2>{connection.displayName}</h2>
                   <Badge tone={statusTone[connection.status]}>{statusLabel[connection.status]}</Badge>
                 </div>
-                <p>{connection.endpointUrl}</p>
+                <p>{endpointSummary(connection.endpointUrl)}</p>
               </div>
               <div className="card-row">
                 {connection.isActive ? <Badge tone="info">有効</Badge> : null}
@@ -255,16 +266,36 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
             <h3>基本設定</h3>
             <div className="form-grid">
               <Field label="接続名">
-                <input value={draft.displayName} onChange={(event) => updateDraft('displayName', event.target.value)} placeholder="Production Fabric GraphQL" />
+                <input
+                  aria-label="接続名"
+                  value={draft.displayName}
+                  onChange={(event) => updateDraft('displayName', event.target.value)}
+                  placeholder="Production Fabric GraphQL"
+                />
               </Field>
               <Field label="Workspace ID">
-                <input value={draft.workspaceId} onChange={(event) => updateDraft('workspaceId', event.target.value)} placeholder="ws-..." />
+                <input
+                  aria-label="Workspace ID"
+                  value={draft.workspaceId}
+                  onChange={(event) => updateDraft('workspaceId', event.target.value)}
+                  placeholder="ws-..."
+                />
               </Field>
               <Field label="Fabric GraphQL endpoint">
-                <input value={draft.endpointUrl} onChange={(event) => updateDraft('endpointUrl', event.target.value)} placeholder="https://api.fabric.microsoft.com/..." />
+                <input
+                  aria-label="Fabric GraphQL endpoint"
+                  value={draft.endpointUrl}
+                  onChange={(event) => updateDraft('endpointUrl', event.target.value)}
+                  placeholder="https://api.fabric.microsoft.com/..."
+                />
               </Field>
               <Field label="Schema version">
-                <input value={draft.schemaVersion} onChange={(event) => updateDraft('schemaVersion', event.target.value)} placeholder="fabric-schema-YYYY-MM-DD" />
+                <input
+                  aria-label="Schema version"
+                  value={draft.schemaVersion}
+                  onChange={(event) => updateDraft('schemaVersion', event.target.value)}
+                  placeholder="fabric-schema-YYYY-MM-DD"
+                />
               </Field>
             </div>
           </section>
@@ -273,20 +304,21 @@ export const FabricConnectionAdminScreen = ({ onBack }: { onBack: () => void }) 
             <h3>認証</h3>
             <div className="form-grid">
               <Field label="認証方式">
-                <select value={draft.authMode} onChange={(event) => updateDraft('authMode', event.target.value)}>
+                <select aria-label="認証方式" value={draft.authMode} onChange={(event) => updateDraft('authMode', event.target.value)}>
                   <option value="obo">On-behalf-of</option>
                   <option value="service_principal">Service principal</option>
                 </select>
               </Field>
               <Field label="Tenant ID">
-                <input value={draft.tenantId} onChange={(event) => updateDraft('tenantId', event.target.value)} />
+                <input aria-label="Tenant ID" value={draft.tenantId} onChange={(event) => updateDraft('tenantId', event.target.value)} />
               </Field>
               <Field label="Client ID">
-                <input value={draft.clientId} onChange={(event) => updateDraft('clientId', event.target.value)} />
+                <input aria-label="Client ID" value={draft.clientId} onChange={(event) => updateDraft('clientId', event.target.value)} />
               </Field>
               <Field label="Client Secret" help="保存後は値を再表示しません。">
                 <input
                   type="password"
+                  aria-label="Client Secret"
                   value={draft.clientSecret}
                   onChange={(event) => updateDraft('clientSecret', event.target.value)}
                   disabled={draft.authMode === 'obo'}

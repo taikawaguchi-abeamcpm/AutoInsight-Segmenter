@@ -32,6 +32,52 @@ const formatAudienceRate = (value?: number) => {
   return formatPercent(value);
 };
 
+const stripDecimalSuffixes = (value: string) => value.replace(/(\d+)\.0\b/g, '$1');
+
+const formatRuleValue = (value: string | number | boolean) => {
+  if (typeof value === 'number') {
+    return formatNumber(value, { maximumFractionDigits: value >= 1000 ? 0 : 2 });
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'はい' : 'いいえ';
+  }
+
+  return stripDecimalSuffixes(value);
+};
+
+const operatorLabels: Record<SegmentRuleCondition['operator'], string> = {
+  eq: 'が',
+  neq: 'が次以外',
+  gt: 'が次より大きい',
+  gte: 'が次以上',
+  lt: 'が次未満',
+  lte: 'が次以下',
+  between: 'が次の範囲',
+  contains: 'に含む',
+  in: 'が次のいずれか'
+};
+
+const displayCondition = (condition: SegmentRuleCondition) =>
+  `${stripDecimalSuffixes(condition.fieldLabel.split(' が ')[0] || condition.fieldLabel)} ${operatorLabels[condition.operator]} ${formatRuleValue(condition.value)}`;
+
+const normalizeDraftLabels = (draft: SegmentDraft): SegmentDraft => {
+  const conditions = draft.ruleTree.conditions.map((condition) => ({
+    ...condition,
+    fieldLabel: displayCondition(condition)
+  }));
+  const firstConditionName = conditions.map((condition) => condition.fieldLabel).join(' かつ ');
+
+  return {
+    ...draft,
+    name: firstConditionName ? `${firstConditionName} 未成果候補` : stripDecimalSuffixes(draft.name),
+    ruleTree: {
+      ...draft.ruleTree,
+      conditions
+    }
+  };
+};
+
 export const SegmentCreationScreen = ({
   context,
   onBack
@@ -48,7 +94,7 @@ export const SegmentCreationScreen = ({
 
     segmentApi
       .bootstrap(context, { signal: controller.signal })
-      .then(setDraft)
+      .then((nextDraft) => setDraft(normalizeDraftLabels(nextDraft)))
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
           setDraft(null);
@@ -157,6 +203,29 @@ export const SegmentCreationScreen = ({
     setSubmitting(false);
   };
 
+  const saveDraft = async () => {
+    if (!draft) {
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const nextDraft = {
+        ...draft,
+        outputConfig: {
+          ...draft.outputConfig,
+          executionTiming: 'later' as const
+        }
+      };
+      const preview = await segmentApi.preview(nextDraft);
+      const result = await segmentApi.save({ ...nextDraft, previewSummary: preview });
+      setDraft({ ...nextDraft, previewSummary: preview, status: 'saved' });
+      setSaveResult(result);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (!draft) {
     return (
       <div className="screen">
@@ -177,7 +246,7 @@ export const SegmentCreationScreen = ({
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>結果に戻る</Button>
-          <Button variant="secondary"><Save size={16} /> 下書き保存</Button>
+          <Button variant="secondary" onClick={saveDraft} disabled={submitting}><Save size={16} /> 下書き保存</Button>
           <Button onClick={save} disabled={submitting}>セグメントを作成</Button>
         </div>
       </header>
@@ -273,7 +342,7 @@ export const SegmentCreationScreen = ({
                 <div className="sample-row" key={row.customerKey}>
                   <strong>{row.displayName ?? row.customerKey}</strong>
                   <span>{Object.entries(row.attributes).map(([key, value]) => `${key}: ${value}`).join(' / ')}</span>
-                  <small>{row.matchedReasons[0]}</small>
+                  <small>{row.matchedReasons[0] ? stripDecimalSuffixes(row.matchedReasons[0]) : undefined}</small>
                 </div>
               ))}
             </div>

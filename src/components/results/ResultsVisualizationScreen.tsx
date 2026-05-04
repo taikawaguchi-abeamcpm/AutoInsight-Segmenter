@@ -11,6 +11,14 @@ const directionLabel: Record<FeatureImportanceResult['direction'], string> = {
   neutral: '中立'
 };
 
+const statusLabel: Record<AnalysisResultDocument['status'], string> = {
+  queued: '待機中',
+  running: '実行中',
+  completed: '完了',
+  partial: '一部完了',
+  failed: '失敗'
+};
+
 const categoryLabel: Record<FeatureImportanceResult['category'], string> = {
   profile: '顧客属性',
   behavior: '行動',
@@ -41,6 +49,8 @@ const operatorLabel: Record<string, string> = {
   in: 'が次のいずれか'
 };
 
+const stripDecimalSuffixes = (value: string) => value.replace(/(\d+)\.0\b/g, '$1');
+
 const conditionValueLabel = (condition: { value: string | number | boolean; valueTo?: string | number }) =>
   condition.valueTo !== undefined
     ? `${formatDisplayValue(condition.value)} - ${formatDisplayValue(condition.valueTo)}`
@@ -55,12 +65,12 @@ const formatDisplayValue = (value: string | number | boolean) => {
     return value ? 'はい' : 'いいえ';
   }
 
-  return value;
+  return stripDecimalSuffixes(value);
 };
 
 const conditionFeatureLabel = (label: string) => {
   const [feature] = label.split(' が ');
-  return feature || label;
+  return stripDecimalSuffixes(feature || label);
 };
 
 const conditionSummary = (conditions: { label: string; operator: string; value: string | number | boolean; valueTo?: string | number }[]) =>
@@ -95,6 +105,8 @@ export const ResultsVisualizationScreen = ({
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
   const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [savingResult, setSavingResult] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -154,6 +166,50 @@ export const ResultsVisualizationScreen = ({
     );
   };
 
+  const saveResult = async () => {
+    if (!result) {
+      return;
+    }
+
+    setSavingResult(true);
+    try {
+      await resultsApi.saveResult(result);
+      setActionMessage('分析結果を保存しました。');
+    } finally {
+      setSavingResult(false);
+    }
+  };
+
+  const exportSegmentsCsv = () => {
+    if (selectedSegments.length === 0) {
+      return;
+    }
+
+    const headers = ['segmentId', 'name', 'estimatedAudienceSize', 'priorityScore', 'conditions'];
+    const rows = selectedSegments.map((segment) => [
+      segment.id,
+      segmentDisplayName(segment),
+      String(segment.estimatedAudienceSize),
+      String(segment.priorityScore),
+      segment.conditions.map((condition) => conditionSummary([condition])).join(' / ')
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `autoinsight-segments-${result?.analysisJobId ?? 'result'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    setActionMessage('選択中のセグメント候補をCSVとして出力しました。');
+  };
+
+  const segmentDisplayName = (segment: SelectedSegmentContext['segments'][number]) =>
+    segment.conditions.length > 0 ? `${conditionSummary(segment.conditions)} 未成果候補` : stripDecimalSuffixes(segment.name);
+
   if (!result) {
     return (
       <div className="screen">
@@ -177,13 +233,13 @@ export const ResultsVisualizationScreen = ({
         </div>
         <div className="actions">
           <Button variant="secondary" onClick={onBack}>条件を見直す</Button>
-          <Button variant="secondary"><RefreshCw size={16} /> 再実行</Button>
-          <Button variant="secondary"><Save size={16} /> 結果を保存</Button>
+          <Button variant="secondary" onClick={onBack}><RefreshCw size={16} /> 再実行</Button>
+          <Button variant="secondary" onClick={saveResult} disabled={savingResult}><Save size={16} /> {savingResult ? '保存中' : '結果を保存'}</Button>
         </div>
       </header>
 
       <Card className="status-strip">
-        <Badge tone={completed ? 'success' : result.status === 'failed' ? 'danger' : 'info'}>{result.status}</Badge>
+        <Badge tone={completed ? 'success' : result.status === 'failed' ? 'danger' : 'info'}>{statusLabel[result.status]}</Badge>
         <div
           className="progress-track"
           role="progressbar"
@@ -198,6 +254,7 @@ export const ResultsVisualizationScreen = ({
         <span>{statusMessage}</span>
         {result.status === 'failed' && result.detail ? <small>{result.detail}</small> : null}
       </Card>
+      {actionMessage ? <p className="notice success">{actionMessage}</p> : null}
 
       <div className="kpi-strip">
         <Metric label="分析対象件数" value={formatNumber(result.summary.analyzedRowCount)} />
@@ -360,7 +417,7 @@ export const ResultsVisualizationScreen = ({
               {result.segmentRecommendations.map((segment) => (
                 <label className="feature-row" key={segment.id}>
                   <input type="checkbox" checked={selectedSegmentIds.includes(segment.id)} onChange={() => toggleSegment(segment.id)} />
-                  <span>{segment.name}</span>
+                  <span>{segmentDisplayName(segment)}</span>
                   <small>{formatNumber(segment.estimatedAudienceSize)} 人</small>
                   <Badge tone="info">{segment.priorityScore}</Badge>
                 </label>
@@ -374,7 +431,7 @@ export const ResultsVisualizationScreen = ({
         <span>{completed ? '確定済み' : '更新中'}</span>
         <strong>{selectedSegments.length > 0 ? `${selectedSegments.length} 件の候補を選択` : '候補未選択'}</strong>
         <div className="actions">
-          <Button variant="secondary" disabled={!completed}><Download size={16} /> CSV 出力</Button>
+          <Button variant="secondary" onClick={exportSegmentsCsv} disabled={!completed || selectedSegments.length === 0}><Download size={16} /> CSV 出力</Button>
           <Button onClick={continueToSegments} disabled={!completed || selectedSegments.length === 0}>セグメント作成へ進む</Button>
         </div>
       </footer>
