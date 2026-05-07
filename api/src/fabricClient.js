@@ -317,21 +317,22 @@ const executeFabricGraphql = async (connection, req, query, variables) => {
   const token = await getBearerToken(connection, req);
   const candidates = endpointCandidates(connection.endpointUrl, connection);
   let lastError;
-  let sawNotFound = false;
+  let sawEndpointShapeError = false;
 
   for (const endpointUrl of candidates) {
     try {
       return await postFabricGraphql(endpointUrl, token, query, variables);
     } catch (err) {
       lastError = err;
-      sawNotFound = sawNotFound || (err.status || err.statusCode) === 404;
-      if (!isEndpointShapeError(err)) {
+      const endpointShapeError = isEndpointShapeError(err);
+      sawEndpointShapeError = sawEndpointShapeError || endpointShapeError;
+      if (!endpointShapeError) {
         throw err;
       }
     }
   }
 
-  if (sawNotFound) {
+  if (sawEndpointShapeError) {
     const discovered = await discoverReplacementEndpoints(connection, token);
     for (const endpointUrl of discovered.filter((endpointUrl) => !candidates.includes(endpointUrl))) {
       try {
