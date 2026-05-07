@@ -326,6 +326,15 @@ def time_window_to_millis(window: dict[str, Any] | None) -> float | None:
     return days * 24 * 60 * 60 * 1000
 
 
+def time_window_label(window: dict[str, Any] | None) -> str:
+    if not window:
+        return ""
+    value = window.get("value")
+    unit = str(window.get("unit") or "day").lower()
+    suffix = "d" if unit == "day" else "w" if unit == "week" else "m"
+    return f" last {value}{suffix}"
+
+
 def is_leakage_like_feature(
     mapped_column: dict[str, Any],
     feature_config: dict[str, Any],
@@ -471,6 +480,22 @@ def autopilot_feature_key(column: dict[str, Any], aggregation: str, window: dict
     return f"auto_{base}_{suffix}"
 
 
+def generated_feature_key(prefix: str, *parts: Any, limit: int = 80) -> str:
+    tokens = [normalize_identifier(part) for part in parts]
+    key = "_".join([prefix, *[token for token in tokens if token]])[:limit]
+    return key or prefix
+
+
+def make_unique_feature_key(base_key: str, existing_keys: set[str]) -> str:
+    key = base_key
+    index = 2
+    while key in existing_keys:
+        key = f"{base_key}_{index}"
+        index += 1
+    existing_keys.add(key)
+    return key
+
+
 def build_autopilot_feature_descriptors(
     mapping: dict[str, Any],
     dataset: dict[str, Any],
@@ -505,13 +530,15 @@ def build_autopilot_feature_descriptors(
             return
         seen_keys.add(feature_key)
         data_type = column.get("dataType")
-        value_type = "numeric" if data_type in {"integer", "float", "boolean"} or aggregation in {"count", "distinct_count"} or derived_kind == "recency_days" else "categorical"
+        value_type = "numeric" if data_type in {"integer", "float", "boolean"} or aggregation in {"count", "distinct_count"} or derived_kind in {"recency_days", "category_value_counts"} else "categorical"
         generated.append({
             "featureKey": feature_key,
             "label": (
-                f"{column.get('displayName') or column.get('name')} recency days"
+                f"{column.get('displayName') or column.get('name')} recency days{time_window_label(window)}"
                 if derived_kind == "recency_days"
-                else f"{column.get('displayName') or column.get('name')} {aggregation}"
+                else f"{column.get('displayName') or column.get('name')} value counts{time_window_label(window)}"
+                if derived_kind == "category_value_counts"
+                else f"{column.get('displayName') or column.get('name')} {aggregation}{time_window_label(window)}"
             ),
             "sourceColumnName": column.get("name"),
             "sourceColumnId": column.get("id"),
@@ -526,6 +553,7 @@ def build_autopilot_feature_descriptors(
             "aggregation": aggregation,
             "timeWindow": window,
             "derivedKind": derived_kind,
+            "template": derived_kind == "category_value_counts",
             "autopilotGenerated": True,
             "plan": plan,
         })
@@ -558,9 +586,11 @@ def build_autopilot_feature_descriptors(
                         add_feature(item, aggregation, window)
             elif data_type in {"string", "boolean"}:
                 add_feature(item, "distinct_count")
+                add_feature(item, "count", None, "category_value_counts")
                 for window in windows:
                     if window:
                         add_feature(item, "count", window)
+                        add_feature(item, "count", window, "category_value_counts")
                 add_feature(item, "latest")
 
             if len(generated) >= candidate_limit:
@@ -749,6 +779,210 @@ def filter_values_for_target_time(
     return filtered
 
 
+def derive_category_value_count_features(
+    rows: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+    max_levels_per_feature: int = 12,
+) -> None:
+    existing_keys = {feature["featureKey"] for feature in features}
+    generated_count = 0
+    templates = [
+        feature for feature in features
+        if feature.get("derivedKind") == "category_value_counts" and feature.get("template")
+    ]
+
+    for template in templates:
+        template_key = template["featureKey"]
+        level_counts: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            row_values = (row.get("__featureValues") or {}).get(template_key) or []
+            seen_in_row = set()
+            for item in row_values:
+                value = item.get("value")
+                if is_missing(value):
+                    continue
+                key = str(value)
+                entry = level_counts.setdefault(key, {"value": value, "rows": 0, "events": 0})
+                entry["events"] += 1
+                if key not in seen_in_row:
+                    entry["rows"] += 1
+                    seen_in_row.add(key)
+
+        ranked_levels = sorted(
+            level_counts.values(),
+            key=lambda item: (item["rows"], item["events"], str(item["value"])),
+            reverse=True,
+        )[:max_levels_per_feature]
+
+        for level in ranked_levels:
+            value = level["value"]
+            label = label_for_value(template, value)
+            base_key = generated_feature_key(template_key, "eq", value)
+            feature_key = make_unique_feature_key(base_key, existing_keys)
+            for row in rows:
+                row_values = (row.get("__featureValues") or {}).get(template_key) or []
+                row[feature_key] = sum(1 for item in row_values if str(item.get("value")) == str(value))
+            features.append({
+                **{key: value for key, value in template.items() if key not in {"featureKey", "label", "template"}},
+                "featureKey": feature_key,
+                "label": f"{template.get('label')} = {label} count",
+                "valueType": "numeric",
+                "aggregation": "count",
+                "derivedKind": "category_value_count",
+                "categoryValue": value,
+                "autopilotGenerated": True,
+            })
+            generated_count += 1
+
+    if generated_count:
+        diagnostics["autoDerivedCategoryFeatureCount"] = diagnostics.get("autoDerivedCategoryFeatureCount", 0) + generated_count
+
+
+def derive_timed_transition_features(
+    rows: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    event_time_columns_by_table: dict[str, dict[str, Any]],
+    diagnostics: dict[str, Any],
+    max_features: int = 40,
+) -> None:
+    existing_keys = {feature["featureKey"] for feature in features}
+    generated_count = 0
+    gap_days_options = [1, 3, 7]
+    min_support = max(3, math.ceil(len(rows) * 0.02))
+    sequence_features = [
+        feature for feature in features
+        if is_sequence_mining_feature(feature, event_time_columns_by_table) and not feature.get("template")
+    ]
+
+    for feature in sequence_features:
+        candidates: dict[tuple[str, str, int], set[int]] = {}
+        for row_index, row in enumerate(rows):
+            events = (row.get("__sequenceEvents") or {}).get(feature["featureKey"]) or []
+            events = [event for event in events if event.get("at") is not None and not is_missing(event.get("value"))]
+            events.sort(key=lambda item: item["at"])
+            for left_index, left in enumerate(events):
+                for right in events[left_index + 1:]:
+                    gap_ms = right["at"] - left["at"]
+                    if gap_ms < 0:
+                        continue
+                    gap_days = gap_ms / (24 * 60 * 60 * 1000)
+                    for max_gap_days in gap_days_options:
+                        if gap_days <= max_gap_days:
+                            key = (str(left["value"]), str(right["value"]), max_gap_days)
+                            candidates.setdefault(key, set()).add(row_index)
+
+        ranked = sorted(candidates.items(), key=lambda item: len(item[1]), reverse=True)
+        for (left, right, max_gap_days), matched_indexes in ranked:
+            if len(matched_indexes) < min_support or generated_count >= max_features:
+                continue
+            base_key = generated_feature_key("auto_transition", feature["featureKey"], left, right, f"{max_gap_days}d")
+            feature_key = make_unique_feature_key(base_key, existing_keys)
+            for row_index, row in enumerate(rows):
+                row[feature_key] = row_index in matched_indexes
+            label = f"{feature.get('label')} {left} -> {right} within {max_gap_days}d"
+            features.append({
+                "featureKey": feature_key,
+                "label": label,
+                "sourceTableId": feature.get("sourceTableId"),
+                "sourceTableName": feature.get("sourceTableName"),
+                "sourceTableDisplayName": feature.get("sourceTableDisplayName"),
+                "sourceColumnName": feature.get("sourceColumnName"),
+                "dataType": "boolean",
+                "valueType": "categorical",
+                "category": "derived",
+                "aggregation": "none",
+                "derivedKind": "timed_transition",
+                "autopilotGenerated": True,
+                "plan": {"kind": "derived"},
+            })
+            generated_count += 1
+        if generated_count >= max_features:
+            break
+
+    if generated_count:
+        diagnostics["autoDerivedTransitionFeatureCount"] = diagnostics.get("autoDerivedTransitionFeatureCount", 0) + generated_count
+
+
+def derive_numeric_combination_features(
+    rows: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+    max_base_features: int = 10,
+    max_generated_features: int = 18,
+) -> None:
+    existing_keys = {feature["featureKey"] for feature in features}
+    min_present = max(3, math.ceil(len(rows) * 0.2))
+    numeric_features = []
+    for feature in features:
+        if feature.get("template") or not is_numeric_training_feature(feature):
+            continue
+        values = [to_number(row.get(feature["featureKey"])) for row in rows]
+        present = [value for value in values if value is not None]
+        if len(present) >= min_present and stddev(present) > 0:
+            numeric_features.append(feature)
+
+    numeric_features = numeric_features[:max_base_features]
+    generated_count = 0
+    for left, right in combinations(numeric_features, 2):
+        if generated_count >= max_generated_features:
+            break
+        left_key = left["featureKey"]
+        right_key = right["featureKey"]
+        for kind in ["ratio", "product"]:
+            if generated_count >= max_generated_features:
+                break
+            left_kind = left.get("derivedKind")
+            right_kind = right.get("derivedKind")
+            left_aggregation = left.get("aggregation")
+            right_aggregation = right.get("aggregation")
+            if (
+                kind == "product"
+                and (
+                    "recency_days" in {left_kind, right_kind}
+                    or {left_aggregation, right_aggregation} & {"count", "distinct_count"}
+                )
+            ):
+                continue
+            base_key = generated_feature_key("auto_combo", left_key, right_key, kind)
+            feature_key = make_unique_feature_key(base_key, existing_keys)
+            present_values = []
+            for row in rows:
+                left_value = to_number(row.get(left_key))
+                right_value = to_number(row.get(right_key))
+                value = None
+                if left_value is not None and right_value is not None:
+                    if kind == "ratio":
+                        value = left_value / right_value if abs(right_value) > 1e-9 else None
+                    else:
+                        value = left_value * right_value
+                row[feature_key] = value
+                if value is not None and math.isfinite(value):
+                    present_values.append(value)
+            if len(present_values) < min_present or stddev(present_values) == 0:
+                for row in rows:
+                    row.pop(feature_key, None)
+                existing_keys.discard(feature_key)
+                continue
+            features.append({
+                "featureKey": feature_key,
+                "label": f"{left.get('label')} {kind} {right.get('label')}",
+                "sourceTableDisplayName": left.get("sourceTableDisplayName") or right.get("sourceTableDisplayName"),
+                "sourceColumnName": f"{left.get('sourceColumnName')}:{right.get('sourceColumnName')}",
+                "dataType": "float",
+                "valueType": "numeric",
+                "category": "derived",
+                "aggregation": kind,
+                "derivedKind": f"numeric_{kind}",
+                "autopilotGenerated": True,
+                "plan": {"kind": "derived"},
+            })
+            generated_count += 1
+
+    if generated_count:
+        diagnostics["autoDerivedNumericComboFeatureCount"] = diagnostics.get("autoDerivedNumericComboFeatureCount", 0) + generated_count
+
+
 def materialize_analysis_rows(
     connection: dict[str, Any],
     auth: dict[str, Any],
@@ -760,6 +994,7 @@ def materialize_analysis_rows(
     analysis_unit_key_column: dict[str, Any] | None = None,
     target_event_time_column: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
+    enable_derived_feature_expansion: bool = True,
 ) -> dict[str, Any]:
     diagnostics = diagnostics if diagnostics is not None else {}
     columns = column_id_map(dataset)
@@ -784,6 +1019,8 @@ def materialize_analysis_rows(
             "__target": target_value,
             "__targetAt": target_at,
             "__sequences": {},
+            "__sequenceEvents": {},
+            "__featureValues": {},
             "__raw": raw,
         })
     row_by_id = {row["__rowId"]: row for row in rows}
@@ -830,6 +1067,7 @@ def materialize_analysis_rows(
                 row = row_by_id.get(row_id)
                 if row:
                     row_values = filter_values_for_target_time(values, feature, row.get("__targetAt"), diagnostics)
+                    row["__featureValues"][feature["featureKey"]] = row_values
                     ordered_values = [
                         label_for_value(feature, item["value"])
                         for item in sorted(row_values, key=lambda item: item.get("at") if item.get("at") is not None else 0)
@@ -839,9 +1077,21 @@ def materialize_analysis_rows(
                     row[feature["featureKey"]] = aggregated
                     if is_sequence_mining_feature(feature, event_time_columns_by_table):
                         row["__sequences"][feature["featureKey"]] = ordered_values
+                        row["__sequenceEvents"][feature["featureKey"]] = [
+                            {"value": label_for_value(feature, item["value"]), "at": item.get("at")}
+                            for item in sorted(row_values, key=lambda item: item.get("at") if item.get("at") is not None else 0)
+                            if not is_missing(item.get("value"))
+                        ]
+
+    if enable_derived_feature_expansion:
+        derive_category_value_count_features(rows, features, diagnostics)
+        derive_timed_transition_features(rows, features, event_time_columns_by_table, diagnostics)
+        derive_numeric_combination_features(rows, features, diagnostics)
 
     for row in rows:
         row.pop("__raw", None)
+        row.pop("__featureValues", None)
+        row.pop("__sequenceEvents", None)
 
     return {"rows": rows, "truncated": target_response["truncated"]}
 
@@ -1713,8 +1963,10 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
         analysis_unit_key_column,
         target_event_time_column,
         diagnostics,
+        config.get("mode") == "autopilot" and config.get("allowGeneratedFeatures", True),
     )
     rows = materialized["rows"]
+    features = [feature for feature in features if not feature.get("template")]
     truncated = materialized["truncated"]
     source_row_count = len(rows)
     if analysis_unit == "customer" and analysis_unit_key_column:
@@ -1867,6 +2119,9 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
             "randomSeed": random_seed,
             "importanceMethod": importance_method,
             "autopilotGeneratedFeatureCount": diagnostics.get("autopilotGeneratedFeatureCount"),
+            "autoDerivedCategoryFeatureCount": diagnostics.get("autoDerivedCategoryFeatureCount", 0),
+            "autoDerivedTransitionFeatureCount": diagnostics.get("autoDerivedTransitionFeatureCount", 0),
+            "autoDerivedNumericComboFeatureCount": diagnostics.get("autoDerivedNumericComboFeatureCount", 0),
             "autopilotCandidateModels": diagnostics.get("autopilotCandidateModels"),
             "autopilotSelectedStrategy": (max(autopilot_candidates, key=lambda item: item.get("score", 0)).get("strategy") if autopilot_candidates else None),
         },
