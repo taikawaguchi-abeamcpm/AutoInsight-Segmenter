@@ -5,19 +5,45 @@ const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 100
 const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 500);
 const ANALYSIS_MAX_ROWS = Number(process.env.FABRIC_ANALYSIS_MAX_ROWS || 5000);
 const GRAPHQL_API_SEGMENT_VARIANTS = ['graphqlapis', 'GraphQLApis', 'graphQLApis'];
+const EXPECTED_URI_FORMAT_PATTERN = /request\s+uri\s+is\s+not\s+in\s+the\s+expected\s+format/i;
 
 const getGraphqlApiName = (endpointUrl) => {
   try {
     const url = new URL(endpointUrl);
     const segments = url.pathname.split('/').filter(Boolean);
     const apiIndex = segments.findIndex((segment) => segment.toLowerCase() === 'graphqlapis');
-    return apiIndex >= 0 && segments[apiIndex + 1] ? segments[apiIndex + 1] : 'fabric-graphql';
+    if (apiIndex >= 0 && segments[apiIndex + 1]) {
+      return segments[apiIndex + 1];
+    }
+    if (url.hostname.endsWith('.graphql.fabric.microsoft.com') && segments[0]) {
+      return segments[0].toLowerCase() === 'graphql' ? 'fabric-graphql' : segments[0];
+    }
+    return 'fabric-graphql';
   } catch {
     return 'fabric-graphql';
   }
 };
 
 const unique = (values) => [...new Set(values.filter(Boolean))];
+
+const directGraphqlApiId = (endpointUrl) => {
+  try {
+    const url = new URL(endpointUrl);
+    if (!url.hostname.endsWith('.graphql.fabric.microsoft.com')) {
+      return undefined;
+    }
+
+    const segments = url.pathname.split('/').filter(Boolean);
+    const apiIndex = segments.findIndex((segment) => segment.toLowerCase() === 'graphqlapis');
+    if (apiIndex >= 0) {
+      return undefined;
+    }
+
+    return segments.find((segment) => segment.toLowerCase() !== 'v1' && segment.toLowerCase() !== 'graphql');
+  } catch {
+    return undefined;
+  }
+};
 
 const parseGraphqlEndpoint = (endpointUrl) => {
   try {
@@ -41,10 +67,28 @@ const parseGraphqlEndpoint = (endpointUrl) => {
 const endpointForGraphqlApi = (workspaceId, apiId, apiSegment = 'graphqlapis') =>
   `https://api.fabric.microsoft.com/v1/workspaces/${encodeURIComponent(workspaceId)}/${apiSegment}/${encodeURIComponent(apiId)}/graphql`;
 
+const directEndpointForGraphqlApi = (baseUrl, workspaceId, apiId, apiSegment = 'graphqlapis') => {
+  const url = new URL(baseUrl);
+  url.pathname = `/v1/workspaces/${encodeURIComponent(workspaceId)}/${apiSegment}/${encodeURIComponent(apiId)}/graphql`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+};
+
 const endpointCandidates = (endpointUrl, connection) => {
   const parsed = parseGraphqlEndpoint(endpointUrl);
   if (!parsed?.apiId) {
-    return [endpointUrl];
+    const workspaceId = connection.workspaceId || parsed?.workspaceId;
+    const apiId = directGraphqlApiId(endpointUrl);
+    if (!workspaceId || !apiId) {
+      return [endpointUrl];
+    }
+
+    return unique([
+      endpointUrl,
+      ...GRAPHQL_API_SEGMENT_VARIANTS.map((variant) => directEndpointForGraphqlApi(endpointUrl, workspaceId, apiId, variant)),
+      ...GRAPHQL_API_SEGMENT_VARIANTS.map((variant) => endpointForGraphqlApi(workspaceId, apiId, variant))
+    ]);
   }
 
   const { url, segments, apiIndex } = parsed;
@@ -73,7 +117,10 @@ const endpointCandidates = (endpointUrl, connection) => {
   return unique(candidates);
 };
 
-const isEndpointShapeStatus = (status) => status === 404 || status === 405;
+const isEndpointShapeError = (err) => {
+  const status = err.status || err.statusCode;
+  return status === 404 || status === 405 || (status === 400 && EXPECTED_URI_FORMAT_PATTERN.test(err.message || ''));
+};
 
 const extractFabricErrorMessage = (payload, response) =>
   payload.errors?.map((item) => item.message).join(' / ') ||
@@ -278,7 +325,7 @@ const executeFabricGraphql = async (connection, req, query, variables) => {
     } catch (err) {
       lastError = err;
       sawNotFound = sawNotFound || (err.status || err.statusCode) === 404;
-      if (!isEndpointShapeStatus(err.status || err.statusCode)) {
+      if (!isEndpointShapeError(err)) {
         throw err;
       }
     }
@@ -291,7 +338,7 @@ const executeFabricGraphql = async (connection, req, query, variables) => {
         return await postFabricGraphql(endpointUrl, token, query, variables);
       } catch (err) {
         lastError = err;
-        if (!isEndpointShapeStatus(err.status || err.statusCode)) {
+        if (!isEndpointShapeError(err)) {
           throw err;
         }
       }
