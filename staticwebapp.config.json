@@ -8,8 +8,12 @@
   },
   "routes": [
     {
+      "route": "/.auth/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    },
+    {
       "route": "/api/*",
-      "allowedRoles": ["anonymous"]
+      "allowedRoles": ["authenticated"]
     },
     {
       "route": "/*",
@@ -26,5 +30,26 @@
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "auth": {
+    "identityProviders": {
+      "customOpenIdConnectProviders": {
+        "entra": {
+          "registration": {
+            "clientIdSettingName": "ENTRA_EXTERNAL_ID_CLIENT_ID",
+            "clientCredential": {
+              "clientSecretSettingName": "ENTRA_EXTERNAL_ID_CLIENT_SECRET"
+            },
+            "openIdConnectConfiguration": {
+              "wellKnownOpenIdConfiguration": "https://AutoInsightSegmenter.ciamlogin.com/ecfd8722-f4c4-4d3b-899b-19aac3e1faac/v2.0/.well-known/openid-configuration"
+            }
+          },
+          "login": {
+            "nameClaimType": "name",
+            "scopes": ["openid", "profile", "email"]
+          }
+        }
+      }
+    }
   }
 }

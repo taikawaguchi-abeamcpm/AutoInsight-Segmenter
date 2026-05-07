@@ -2,6 +2,7 @@ const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = 
 const { correlationId, makeHash, nowIso } = require('../src/http');
 const { buildRealAnalysisResult, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
+const { completeOnboarding, getOrCreateUserSession } = require('../src/auth');
 
 const actor = 'system';
 
@@ -385,9 +386,20 @@ const routes = {
         analysisRuns: process.env.COSMOS_ANALYSIS_RUNS_CONTAINER || 'analysisRuns',
         analysisResults: process.env.COSMOS_ANALYSIS_RESULTS_CONTAINER || 'analysisResults',
         segments: process.env.COSMOS_SEGMENTS_CONTAINER || 'segments',
+        users: process.env.COSMOS_USERS_CONTAINER || 'users',
+        tenants: process.env.COSMOS_TENANTS_CONTAINER || 'tenants',
+        memberships: process.env.COSMOS_MEMBERSHIPS_CONTAINER || 'memberships',
         auditLogs: process.env.COSMOS_AUDIT_CONTAINER || 'auditLogs'
       }
     });
+  },
+
+  'GET me': async (req, context) => {
+    json(context, 200, await getOrCreateUserSession(req));
+  },
+
+  'POST me/onboarding': async (req, context) => {
+    json(context, 200, await completeOnboarding(req, readBody(req)));
   },
 
   'GET cosmos/health': async (_req, context) => {
@@ -766,8 +778,13 @@ const routes = {
 module.exports = async function (context, req) {
   const route = (req.params.route || '').replace(/^\/+|\/+$/g, '');
   const key = `${req.method.toUpperCase()} ${route}`;
+  const publicRoutes = new Set(['GET ping']);
 
   try {
+    if (!publicRoutes.has(key)) {
+      await getOrCreateUserSession(req);
+    }
+
     const deleteMatch = route.match(/^fabric-connections\/([^/]+)$/);
     if (req.method.toUpperCase() === 'DELETE' && deleteMatch) {
       const { removeById, upsert } = getStore();

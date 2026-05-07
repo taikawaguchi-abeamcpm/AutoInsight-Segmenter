@@ -10,7 +10,13 @@
     "COSMOS_ANALYSIS_RUNS_CONTAINER": "analysisRuns",
     "COSMOS_ANALYSIS_RESULTS_CONTAINER": "analysisResults",
     "COSMOS_SEGMENTS_CONTAINER": "segments",
+    "COSMOS_USERS_CONTAINER": "users",
+    "COSMOS_TENANTS_CONTAINER": "tenants",
+    "COSMOS_MEMBERSHIPS_CONTAINER": "memberships",
     "COSMOS_AUDIT_CONTAINER": "auditLogs",
+    "AUTH_DEV_USER_ENABLED": "true",
+    "AUTH_DEV_USER_EMAIL": "developer@example.local",
+    "AUTH_DEV_USER_NAME": "Local Developer",
     "ANALYSIS_WORKER_URL": "https://<python-function-app>.azurewebsites.net/api/analysis/run",
     "ANALYSIS_WORKER_KEY": "<function-key>"
   }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AuthGate } from './components/auth/AuthGate';
 import { FabricConnectionAdminScreen } from './components/admin/FabricConnectionAdminScreen';
 import { AnalysisRunScreen } from './components/analysis/AnalysisRunScreen';
 import { type AppStep, Shell } from './components/common/Shell';
@@ -117,8 +118,10 @@ export default function App() {
   };
 
   return (
-    <Shell currentStep={currentStep} unlockedSteps={unlockedSteps} onNavigate={navigate}>
-      {renderScreen()}
-    </Shell>
+    <AuthGate>
+      <Shell currentStep={currentStep} unlockedSteps={unlockedSteps} onNavigate={navigate}>
+        {renderScreen()}
+      </Shell>
+    </AuthGate>
   );
 }

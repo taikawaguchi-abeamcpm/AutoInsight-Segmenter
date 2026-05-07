@@ -9,6 +9,9 @@ const containerNames = {
   analysisRuns: process.env.COSMOS_ANALYSIS_RUNS_CONTAINER || 'analysisRuns',
   analysisResults: process.env.COSMOS_ANALYSIS_RESULTS_CONTAINER || 'analysisResults',
   segments: process.env.COSMOS_SEGMENTS_CONTAINER || 'segments',
+  users: process.env.COSMOS_USERS_CONTAINER || 'users',
+  tenants: process.env.COSMOS_TENANTS_CONTAINER || 'tenants',
+  memberships: process.env.COSMOS_MEMBERSHIPS_CONTAINER || 'memberships',
   auditLogs: process.env.COSMOS_AUDIT_CONTAINER || 'auditLogs'
 };
 
