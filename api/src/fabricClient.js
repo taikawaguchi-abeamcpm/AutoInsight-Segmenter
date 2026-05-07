@@ -4,6 +4,7 @@ const ROW_COUNT_PAGE_SIZE = Number(process.env.FABRIC_ROW_COUNT_PAGE_SIZE || 100
 const ROW_COUNT_MAX_PAGES = Number(process.env.FABRIC_ROW_COUNT_MAX_PAGES || 1000);
 const ANALYSIS_PAGE_SIZE = Number(process.env.FABRIC_ANALYSIS_PAGE_SIZE || 500);
 const ANALYSIS_MAX_ROWS = Number(process.env.FABRIC_ANALYSIS_MAX_ROWS || 5000);
+const GRAPHQL_API_SEGMENT_VARIANTS = ['graphqlapis', 'GraphQLApis', 'graphQLApis'];
 
 const getGraphqlApiName = (endpointUrl) => {
   try {
@@ -14,6 +15,132 @@ const getGraphqlApiName = (endpointUrl) => {
   } catch {
     return 'fabric-graphql';
   }
+};
+
+const unique = (values) => [...new Set(values.filter(Boolean))];
+
+const parseGraphqlEndpoint = (endpointUrl) => {
+  try {
+    const url = new URL(endpointUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const workspaceIndex = segments.findIndex((segment) => segment.toLowerCase() === 'workspaces');
+    const apiIndex = segments.findIndex((segment) => segment.toLowerCase() === 'graphqlapis');
+
+    return {
+      url,
+      segments,
+      workspaceId: workspaceIndex >= 0 ? segments[workspaceIndex + 1] : undefined,
+      apiId: apiIndex >= 0 ? segments[apiIndex + 1] : undefined,
+      apiIndex
+    };
+  } catch {
+    return null;
+  }
+};
+
+const endpointForGraphqlApi = (workspaceId, apiId, apiSegment = 'graphqlapis') =>
+  `https://api.fabric.microsoft.com/v1/workspaces/${encodeURIComponent(workspaceId)}/${apiSegment}/${encodeURIComponent(apiId)}/graphql`;
+
+const endpointCandidates = (endpointUrl, connection) => {
+  const parsed = parseGraphqlEndpoint(endpointUrl);
+  if (!parsed?.apiId) {
+    return [endpointUrl];
+  }
+
+  const { url, segments, apiIndex } = parsed;
+  const candidates = [endpointUrl];
+  const trimmedSegments = segments.slice();
+  const hasGraphqlTail = trimmedSegments[trimmedSegments.length - 1]?.toLowerCase() === 'graphql';
+  if (!hasGraphqlTail) {
+    trimmedSegments.push('graphql');
+  }
+
+  for (const variant of GRAPHQL_API_SEGMENT_VARIANTS) {
+    const nextSegments = trimmedSegments.slice();
+    nextSegments[apiIndex] = variant;
+    const nextUrl = new URL(url.toString());
+    nextUrl.pathname = `/${nextSegments.join('/')}`;
+    candidates.push(nextUrl.toString());
+  }
+
+  const workspaceId = connection.workspaceId || parsed.workspaceId;
+  if (workspaceId) {
+    for (const variant of GRAPHQL_API_SEGMENT_VARIANTS) {
+      candidates.push(endpointForGraphqlApi(workspaceId, parsed.apiId, variant));
+    }
+  }
+
+  return unique(candidates);
+};
+
+const isEndpointShapeStatus = (status) => status === 404 || status === 405;
+
+const extractFabricErrorMessage = (payload, response) =>
+  payload.errors?.map((item) => item.message).join(' / ') ||
+  payload.error?.message ||
+  payload.message ||
+  payload.raw ||
+  response.statusText;
+
+const listWorkspaceGraphqlApis = async (connection, token) => {
+  const parsed = parseGraphqlEndpoint(connection.endpointUrl);
+  const workspaceId = connection.workspaceId || parsed?.workspaceId;
+  if (!workspaceId) {
+    return [];
+  }
+
+  const urls = GRAPHQL_API_SEGMENT_VARIANTS.map(
+    (variant) => `https://api.fabric.microsoft.com/v1/workspaces/${encodeURIComponent(workspaceId)}/${variant}`
+  );
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && Array.isArray(payload.value)) {
+        return payload.value;
+      }
+    } catch {
+      // Discovery is best-effort; the direct GraphQL error remains authoritative.
+    }
+  }
+
+  return [];
+};
+
+const discoverReplacementEndpoints = async (connection, token) => {
+  const parsed = parseGraphqlEndpoint(connection.endpointUrl);
+  const workspaceId = connection.workspaceId || parsed?.workspaceId;
+  if (!workspaceId) {
+    return [];
+  }
+
+  const apis = await listWorkspaceGraphqlApis(connection, token);
+  if (apis.length === 0) {
+    return [];
+  }
+
+  const currentApiName = getGraphqlApiName(connection.endpointUrl).toLowerCase();
+  const connectionName = String(connection.displayName || '').trim().toLowerCase();
+  const matches = apis.filter((api) => {
+    const displayName = String(api.displayName || '').trim().toLowerCase();
+    return (
+      api.id === parsed?.apiId ||
+      (displayName && displayName === currentApiName) ||
+      (displayName && displayName === connectionName)
+    );
+  });
+
+  const selected = matches.length > 0 ? matches : apis.length === 1 ? apis : [];
+  return unique(
+    selected.flatMap((api) =>
+      GRAPHQL_API_SEGMENT_VARIANTS.map((variant) => endpointForGraphqlApi(workspaceId, api.id, variant))
+    )
+  );
 };
 
 const resolveStoredClientSecret = async (connection) => {
@@ -98,14 +225,13 @@ const getBearerToken = async (connection, req) => {
   return payload.access_token;
 };
 
-const executeFabricGraphql = async (connection, req, query, variables) => {
-  const token = await getBearerToken(connection, req);
+const postFabricGraphql = async (endpointUrl, token, query, variables) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FABRIC_GRAPHQL_TIMEOUT_MS);
   let response;
 
   try {
-    response = await fetch(connection.endpointUrl, {
+    response = await fetch(endpointUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -129,14 +255,53 @@ const executeFabricGraphql = async (connection, req, query, variables) => {
 
   const payload = await response.json().catch(async () => ({ raw: await response.text().catch(() => '') }));
   if (!response.ok || payload.errors?.length) {
-    const message = payload.errors?.map((item) => item.message).join(' / ') || payload.raw || response.statusText;
+    const message = extractFabricErrorMessage(payload, response);
     throw Object.assign(new Error(message || 'Fabric GraphQL request failed.'), {
       status: response.status || 502,
-      code: 'FABRIC.GRAPHQL_FAILED'
+      code: 'FABRIC.GRAPHQL_FAILED',
+      endpointUrl
     });
   }
 
   return payload.data;
+};
+
+const executeFabricGraphql = async (connection, req, query, variables) => {
+  const token = await getBearerToken(connection, req);
+  const candidates = endpointCandidates(connection.endpointUrl, connection);
+  let lastError;
+  let sawNotFound = false;
+
+  for (const endpointUrl of candidates) {
+    try {
+      return await postFabricGraphql(endpointUrl, token, query, variables);
+    } catch (err) {
+      lastError = err;
+      sawNotFound = sawNotFound || (err.status || err.statusCode) === 404;
+      if (!isEndpointShapeStatus(err.status || err.statusCode)) {
+        throw err;
+      }
+    }
+  }
+
+  if (sawNotFound) {
+    const discovered = await discoverReplacementEndpoints(connection, token);
+    for (const endpointUrl of discovered.filter((endpointUrl) => !candidates.includes(endpointUrl))) {
+      try {
+        return await postFabricGraphql(endpointUrl, token, query, variables);
+      } catch (err) {
+        lastError = err;
+        if (!isEndpointShapeStatus(err.status || err.statusCode)) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  throw lastError || Object.assign(new Error('Fabric GraphQL request failed.'), {
+    status: 502,
+    code: 'FABRIC.GRAPHQL_FAILED'
+  });
 };
 
 const introspectFabric = async (connection, req) => {
