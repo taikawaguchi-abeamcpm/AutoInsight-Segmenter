@@ -1,0 +1,25 @@
+{
+  "scriptFile": "__init__.py",
+  "bindings": [
+    {
+      "authLevel": "function",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": ["post"],
+      "route": "analysis/enqueue"
+    },
+    {
+      "type": "queue",
+      "direction": "out",
+      "name": "analysisQueueItem",
+      "queueName": "autoinsight-analysis-jobs",
+      "connection": "AzureWebJobsStorage"
+    },
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "$return"
+    }
+  ]
+}

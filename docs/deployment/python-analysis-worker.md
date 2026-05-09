@@ -220,13 +220,16 @@ If the Python worker URL is configured and the worker fails during an analysis r
 
 For large Fabric schemas, the browser sends only the columns needed by the selected target, features, time keys, and joins to `/api/analysis/start`. The API also normalizes analysis results before writing to Cosmos DB and falls back to a compact failed result if the full result cannot be persisted.
 
-The current `/api/analysis/start` path is synchronous from the Static Web Apps API perspective, so the worker defaults are intentionally experiment-sized:
+Deployed analysis starts asynchronously. `/api/analysis/start` stores a queued result, writes the full worker payload to the analysis run record, and enqueues a small message to the Python Function App. The queue worker fetches the payload through a per-job tokenized callback URL, executes the Python analysis, and posts the completed result back to `/api/analysis/callback`.
+
+The deployed `/api/analysis/start` path only waits for queue acceptance. Local development without `ANALYSIS_WORKER_URL` still runs the worker synchronously, so local worker timeouts remain configurable:
 
 ```text
-ANALYSIS_REMOTE_WORKER_TIMEOUT_MS=25000
+ANALYSIS_WORKER_ENQUEUE_TIMEOUT_MS=15000
+ANALYSIS_LOCAL_WORKER_TIMEOUT_MS=900000
 FABRIC_ANALYSIS_PAGE_SIZE=500
 FABRIC_ANALYSIS_MAX_ROWS=5000
 ```
 
-Raise these values only after moving analysis execution to an asynchronous job queue or durable worker path. The Node API intentionally times out the remote worker before the Static Web Apps backend call budget is exhausted, then stores a failed analysis result with diagnostics instead of surfacing a generic `Backend call failure` response.
+Raise Fabric row limits carefully; the queue worker can run longer than a Static Web Apps request, but the Python Function App still has its own `functionTimeout`.
 The GitHub Actions deployment sets the Fabric row limits on the Python Function App to avoid stale app settings overriding the code defaults.

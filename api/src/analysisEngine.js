@@ -4,6 +4,7 @@ const { join, resolve } = require('node:path');
 
 const WORKER_URL = process.env.ANALYSIS_WORKER_URL;
 const WORKER_KEY = process.env.ANALYSIS_WORKER_KEY;
+const WORKER_ENQUEUE_TIMEOUT_MS = Number(process.env.ANALYSIS_WORKER_ENQUEUE_TIMEOUT_MS || 15 * 1000);
 const REMOTE_WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_REMOTE_WORKER_TIMEOUT_MS || process.env.ANALYSIS_WORKER_TIMEOUT_MS || 25 * 1000);
 const LOCAL_WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_LOCAL_WORKER_TIMEOUT_MS || process.env.ANALYSIS_WORKER_TIMEOUT_MS || 15 * 60 * 1000);
 
@@ -72,6 +73,16 @@ const workerHealthUrl = () => {
     url.pathname = `${url.pathname.replace(/\/$/, '')}/health`;
   }
   url.search = '';
+  return url.toString();
+};
+
+const workerEnqueueUrl = () => {
+  const url = new URL(WORKER_URL);
+  if (url.pathname.endsWith('/analysis/run')) {
+    url.pathname = url.pathname.replace(/\/analysis\/run$/, '/analysis/enqueue');
+  } else {
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/enqueue`;
+  }
   return url.toString();
 };
 
@@ -174,6 +185,53 @@ const runRemotePythonWorker = async (payload) => {
       throw analysisError(
         `Python analysis worker is unreachable at ${workerUrlSummary()}. ${err.message}`,
         'ANALYSIS.WORKER_UNREACHABLE',
+        502
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const enqueueRemoteAnalysisJob = async (job) => {
+  if (!WORKER_URL) {
+    throw analysisError(
+      'ANALYSIS_WORKER_URL is not configured. Deploy the Python analysis Function App and set this value in the Node API app settings.',
+      'ANALYSIS.WORKER_URL_NOT_CONFIGURED'
+    );
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WORKER_ENQUEUE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(workerEnqueueUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(WORKER_KEY ? { 'x-functions-key': WORKER_KEY } : {})
+      },
+      body: JSON.stringify(job),
+      signal: controller.signal
+    });
+    const body = await readResponseBody(response);
+
+    if (!response.ok) {
+      const message = body?.message || body?.error || body || response.statusText || 'Python analysis worker enqueue failed.';
+      const err = analysisError(message, 'ANALYSIS.WORKER_ENQUEUE_FAILED', response.status || 502);
+      throw err;
+    }
+
+    return body || { accepted: true };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw analysisError('Python analysis worker enqueue timed out.', 'ANALYSIS.WORKER_ENQUEUE_TIMEOUT', 504);
+    }
+    if (!err.code || !err.code.startsWith?.('ANALYSIS.')) {
+      throw analysisError(
+        `Python analysis worker enqueue is unreachable at ${workerUrlSummary()}. ${err.message}`,
+        'ANALYSIS.WORKER_ENQUEUE_UNREACHABLE',
         502
       );
     }
@@ -308,5 +366,6 @@ const buildCustomerListResult = async ({ connection, req, mapping, dataset, conf
 module.exports = {
   buildCustomerListResult,
   buildRealAnalysisResult,
+  enqueueRemoteAnalysisJob,
   getAnalysisWorkerStatus
 };

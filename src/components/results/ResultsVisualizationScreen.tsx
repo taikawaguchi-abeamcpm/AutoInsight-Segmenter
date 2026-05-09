@@ -5,6 +5,9 @@ import { resultsApi } from '../../services/results/resultsApi';
 import type { AnalysisDataRow, AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation } from '../../types/results';
 import { Badge, Button, Card, EmptyState, formatNumber, formatPercent } from '../common/ui';
 
+const POLL_INTERVAL_MS = 5000;
+const inProgressStatuses = new Set(['queued', 'running']);
+
 const operatorLabel: Record<string, string> = {
   eq: 'が',
   neq: 'が次以外',
@@ -377,6 +380,34 @@ export const ResultsVisualizationScreen = ({
     return () => controller.abort();
   }, [analysisJobId]);
 
+  useEffect(() => {
+    if (!result || !inProgressStatuses.has(result.status)) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      resultsApi
+        .getResult(analysisJobId, { signal: controller.signal })
+        .then((nextResult) => {
+          if (!controller.signal.aborted) {
+            setResult(nextResult);
+            setLoadError(null);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!isAbortError(error) && !controller.signal.aborted) {
+            setLoadError(isApiError(error) || error instanceof Error ? error.message : '分析結果を更新できませんでした。');
+          }
+        });
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [analysisJobId, result]);
+
   const outcomeGroups = useMemo<OutcomeGroup[]>(() => {
     if (!result) {
       return [];
@@ -512,6 +543,18 @@ export const ResultsVisualizationScreen = ({
   }
 
   const completed = result.status === 'completed';
+  const inProgress = inProgressStatuses.has(result.status);
+
+  if (inProgress) {
+    return (
+      <div className="screen">
+        <Card className="loading-panel">
+          <strong>分析を実行中です</strong>
+          <p>{result.message || 'Python worker で分析しています。完了するとこの画面が自動更新されます。'}</p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="screen">

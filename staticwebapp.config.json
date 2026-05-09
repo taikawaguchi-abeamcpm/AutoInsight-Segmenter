@@ -12,6 +12,14 @@
       "allowedRoles": ["anonymous", "authenticated"]
     },
     {
+      "route": "/api/analysis/callback",
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/api/analysis/jobs/*",
+      "allowedRoles": ["anonymous"]
+    },
+    {
       "route": "/api/*",
       "allowedRoles": ["authenticated"]
     },

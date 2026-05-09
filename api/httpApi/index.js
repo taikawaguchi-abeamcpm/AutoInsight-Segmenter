@@ -1,6 +1,7 @@
+const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
 const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
-const { buildCustomerListResult, buildRealAnalysisResult, getAnalysisWorkerStatus } = require('../src/analysisEngine');
+const { buildCustomerListResult, buildRealAnalysisResult, enqueueRemoteAnalysisJob, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 const { completeOnboarding, getOrCreateUserSession } = require('../src/auth');
 
@@ -154,6 +155,65 @@ const readBody = (req) => {
 
   return req.body || {};
 };
+
+const readHeader = (req, name) => {
+  const headers = req.headers || {};
+  const lowerName = name.toLowerCase();
+
+  if (typeof headers.get === 'function') {
+    return headers.get(name) || headers.get(lowerName);
+  }
+
+  return headers[name] || headers[lowerName] || headers[name.toUpperCase()];
+};
+
+const publicOrigin = (req) => {
+  const host = readHeader(req, 'x-forwarded-host') || readHeader(req, 'host');
+  const proto = readHeader(req, 'x-forwarded-proto') || 'https';
+  if (!host) {
+    return '';
+  }
+
+  return `${String(proto).split(',')[0]}://${String(host).split(',')[0]}`;
+};
+
+const callbackToken = () => randomBytes(32).toString('base64url');
+
+const hashCallbackToken = (token) => createHash('sha256').update(String(token)).digest('hex');
+
+const verifyCallbackToken = (token, expectedHash) => {
+  if (!token || !expectedHash) {
+    return false;
+  }
+
+  const actual = Buffer.from(hashCallbackToken(token), 'hex');
+  const expected = Buffer.from(String(expectedHash), 'hex');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+};
+
+const queuedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, now }) => ({
+  id: analysisJobId,
+  analysisJobId,
+  runId,
+  datasetId: dataset?.id || mapping?.datasetId || 'unknown',
+  mappingDocumentId: mapping?.id || 'unknown',
+  mode: config?.mode || 'custom',
+  status: 'queued',
+  progressPercent: 0,
+  message: 'Analysis job is queued.',
+  createdAt: now,
+  startedAt: now,
+  summary: {
+    analyzedRowCount: 0,
+    topFeatureCount: 0,
+    validPatternCount: 0,
+    recommendedSegmentCount: 0
+  },
+  featureImportances: [],
+  interactionPairs: [],
+  goldenPatterns: [],
+  segmentRecommendations: []
+});
 
 const sanitize = (connection) => {
   const { clientSecret, ...safe } = connection;
@@ -437,6 +497,74 @@ const routes = {
     json(context, 200, await getAnalysisWorkerStatus());
   },
 
+  'POST analysis/callback': async (req, context) => {
+    const body = readBody(req);
+    const analysisJobId = body.analysisJobId || body.result?.analysisJobId;
+    const token = readHeader(req, 'x-analysis-callback-token') || body.token;
+    if (!analysisJobId) {
+      error(context, 400, 'ANALYSIS.CALLBACK_JOB_REQUIRED', 'Analysis callback requires analysisJobId.');
+      return;
+    }
+
+    const { queryAll, upsert } = getStore();
+    const run = (await queryAll('analysisRuns', {
+      query: 'SELECT * FROM c WHERE c.id = @id ORDER BY c.updatedAt DESC',
+      parameters: [{ name: '@id', value: analysisJobId }]
+    }))[0];
+
+    if (!run || !verifyCallbackToken(token, run.callbackTokenHash)) {
+      error(context, 401, 'ANALYSIS.CALLBACK_TOKEN_INVALID', 'Analysis callback token is invalid.');
+      return;
+    }
+
+    const completedAt = nowIso();
+    const result = body.result || failedAnalysisResult({
+      analysisJobId,
+      runId: run.runId,
+      mapping: run.workerPayload?.mapping,
+      dataset: run.workerPayload?.dataset,
+      config: run.config,
+      message: body.message || 'Python analysis worker failed.',
+      detail: body.detail
+    });
+    const callbackResult = {
+      ...result,
+      datasetId: result.datasetId === 'unknown' ? run.workerPayload?.dataset?.id || run.datasetId || 'unknown' : result.datasetId,
+      mappingDocumentId: result.mappingDocumentId === 'unknown' ? run.workerPayload?.mapping?.id || run.mappingDocumentId || 'unknown' : result.mappingDocumentId
+    };
+    const storedResult = normalizeAnalysisResultForStorage({
+      analysisResult: {
+        ...callbackResult,
+        completedAt: callbackResult.completedAt || completedAt
+      },
+      analysisJobId,
+      runId: run.runId,
+      mapping: run.workerPayload?.mapping,
+      dataset: run.workerPayload?.dataset,
+      config: run.config
+    });
+
+    await upsert('analysisResults', {
+      ...storedResult,
+      updatedAt: completedAt
+    });
+    await upsert('analysisRuns', {
+      ...run,
+      status: storedResult.status || 'failed',
+      modelVersion: storedResult?.modelMetadata?.modelVersion,
+      featureGenerationVersion: 'python-worker-v1',
+      workerPayload: undefined,
+      updatedAt: completedAt,
+      completedAt: storedResult.completedAt || completedAt
+    });
+
+    json(context, 200, {
+      ok: true,
+      analysisJobId,
+      status: storedResult.status || 'failed'
+    });
+  },
+
   'GET fabric-connections': async (_req, context) => {
     json(context, 200, await listConnections());
   },
@@ -603,8 +731,24 @@ const routes = {
       return;
     }
 
+    const token = callbackToken();
+    const origin = publicOrigin(req);
+    const callbackUrl = origin ? `${origin}/api/analysis/callback` : undefined;
+    const payloadUrl = origin ? `${origin}/api/analysis/jobs/${encodeURIComponent(analysisJobId)}/payload` : undefined;
+    const workerPayload = {
+      analysisJobId,
+      runId,
+      connection: analysisConnection,
+      auth: {
+        authorization: readHeader(req, 'authorization')
+      },
+      mapping: resolvedMapping,
+      dataset: resolvedDataset,
+      config
+    };
     const analysisRun = {
       id: analysisJobId,
+      runId,
       tenantId: 'default',
       partitionKey: 'default',
       datasetId: resolvedDataset.id,
@@ -618,6 +762,84 @@ const routes = {
       createdBy: actor,
       updatedAt: now
     };
+
+    if (process.env.ANALYSIS_WORKER_URL) {
+      if (!callbackUrl || !payloadUrl) {
+        error(context, 500, 'ANALYSIS.CALLBACK_URL_UNAVAILABLE', 'Analysis callback URL could not be built.');
+        return;
+      }
+
+      const queuedResult = normalizeAnalysisResultForStorage({
+        analysisResult: queuedAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config, now }),
+        analysisJobId,
+        runId,
+        mapping: resolvedMapping,
+        dataset: resolvedDataset,
+        config
+      });
+
+      try {
+        await upsert('analysisRuns', {
+          ...analysisRun,
+          callbackTokenHash: hashCallbackToken(token),
+          callbackUrl,
+          payloadUrl,
+          workerPayload,
+          asyncQueuedAt: now
+        });
+        await upsert('analysisResults', {
+          ...queuedResult,
+          updatedAt: now
+        });
+        await enqueueRemoteAnalysisJob({
+          analysisJobId,
+          payloadUrl,
+          callbackUrl,
+          token,
+          queuedAt: now
+        });
+      } catch (err) {
+        logError(context, 'Analysis async enqueue failed', err);
+        const analysisResult = failedAnalysisResult({
+          analysisJobId,
+          runId,
+          mapping: resolvedMapping,
+          dataset: resolvedDataset,
+          config,
+          message: err.message || 'Analysis async enqueue failed.',
+          detail: err.code ? `${err.code}${err.status ? ` (${err.status})` : ''}` : undefined
+        });
+        const failedResult = normalizeAnalysisResultForStorage({
+          analysisResult,
+          analysisJobId,
+          runId,
+          mapping: resolvedMapping,
+          dataset: resolvedDataset,
+          config
+        });
+        await upsert('analysisResults', {
+          ...failedResult,
+          updatedAt: now
+        });
+        await upsert('analysisRuns', {
+          ...analysisRun,
+          status: 'failed',
+          updatedAt: now,
+          completedAt: analysisResult.completedAt
+        });
+        error(context, err.status || err.statusCode || 502, err.code || 'ANALYSIS.ENQUEUE_FAILED', err.message || 'Analysis job could not be queued.');
+        return;
+      }
+
+      json(context, 202, {
+        analysisJobId,
+        runId,
+        status: 'queued',
+        startedAt: now,
+        estimatedDurationSeconds
+      });
+      return;
+    }
 
     try {
       await upsert('analysisRuns', analysisRun);
@@ -812,10 +1034,13 @@ const routes = {
 module.exports = async function (context, req) {
   const route = (req.params.route || '').replace(/^\/+|\/+$/g, '');
   const key = `${req.method.toUpperCase()} ${route}`;
-  const publicRoutes = new Set(['GET ping']);
+  const isPublicRoute = () =>
+    key === 'GET ping' ||
+    key === 'POST analysis/callback' ||
+    (req.method.toUpperCase() === 'GET' && /^analysis\/jobs\/[^/]+\/payload$/.test(route));
 
   try {
-    if (!publicRoutes.has(key)) {
+    if (!isPublicRoute()) {
       await getOrCreateUserSession(req);
     }
 
@@ -829,6 +1054,26 @@ module.exports = async function (context, req) {
       }
 
       json(context, 200, await listConnections());
+      return;
+    }
+
+    const payloadMatch = route.match(/^analysis\/jobs\/([^/]+)\/payload$/);
+    if (req.method.toUpperCase() === 'GET' && payloadMatch) {
+      const analysisJobId = decodeURIComponent(payloadMatch[1]);
+      const queryToken = typeof req.query?.get === 'function' ? req.query.get('token') : req.query?.token;
+      const token = readHeader(req, 'x-analysis-callback-token') || queryToken;
+      const { queryAll } = getStore();
+      const run = (await queryAll('analysisRuns', {
+        query: 'SELECT * FROM c WHERE c.id = @id ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@id', value: analysisJobId }]
+      }))[0];
+
+      if (!run?.workerPayload || !verifyCallbackToken(token, run.callbackTokenHash)) {
+        error(context, 401, 'ANALYSIS.PAYLOAD_TOKEN_INVALID', 'Analysis job payload token is invalid.');
+        return;
+      }
+
+      json(context, 200, run.workerPayload);
       return;
     }
 

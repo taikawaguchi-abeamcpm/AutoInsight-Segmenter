@@ -1,0 +1,99 @@
+import json
+import os
+import sys
+import traceback
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _failed_result(payload, message, detail=None):
+    timestamp = _utc_now()
+    mapping = payload.get("mapping") or {}
+    dataset = payload.get("dataset") or {}
+    config = payload.get("config") or {}
+    analysis_job_id = payload.get("analysisJobId") or "job-python-worker-failed"
+    run_id = payload.get("runId") or "run-python-worker-failed"
+
+    return {
+        "id": analysis_job_id,
+        "analysisJobId": analysis_job_id,
+        "runId": run_id,
+        "datasetId": dataset.get("id") or mapping.get("datasetId") or "unknown",
+        "mappingDocumentId": mapping.get("id") or "unknown",
+        "mode": config.get("mode") or "custom",
+        "status": "failed",
+        "progressPercent": 100,
+        "message": message,
+        "detail": detail,
+        "createdAt": timestamp,
+        "startedAt": timestamp,
+        "completedAt": timestamp,
+        "summary": {
+            "analyzedRowCount": 0,
+            "topFeatureCount": 0,
+            "validPatternCount": 0,
+            "recommendedSegmentCount": 0,
+        },
+        "featureImportances": [],
+        "interactionPairs": [],
+        "goldenPatterns": [],
+        "segmentRecommendations": [],
+    }
+
+
+def _read_json_response(url, token):
+    request = urllib.request.Request(url, method="GET", headers={
+        "x-analysis-callback-token": token,
+    })
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _post_callback(url, token, body):
+    data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(url, data=data, method="POST", headers={
+        "Content-Type": "application/json",
+        "x-analysis-callback-token": token,
+    })
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read()
+
+
+def main(msg):
+    queue_item = json.loads(msg.get_body().decode("utf-8"))
+    token = queue_item["token"]
+    analysis_job_id = queue_item["analysisJobId"]
+    payload = {"analysisJobId": analysis_job_id}
+
+    try:
+        payload = _read_json_response(queue_item["payloadUrl"], token)
+        from autoinsight_analysis.worker import build_real_analysis_result
+
+        result = build_real_analysis_result(payload)
+    except Exception as err:
+        detail = None
+        if os.environ.get("ANALYSIS_WORKER_DEBUG") == "true":
+            detail = traceback.format_exc()
+        result = _failed_result(
+            payload,
+            str(err) or "Python analysis worker failed.",
+            detail=detail,
+        )
+
+    try:
+        _post_callback(queue_item["callbackUrl"], token, {
+            "analysisJobId": analysis_job_id,
+            "result": result,
+        })
+    except urllib.error.HTTPError as err:
+        raise RuntimeError(err.read().decode("utf-8", errors="replace") or err.reason) from err
