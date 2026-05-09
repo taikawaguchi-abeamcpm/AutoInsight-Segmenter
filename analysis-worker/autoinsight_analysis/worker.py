@@ -305,6 +305,52 @@ def label_for_value(feature: dict[str, Any], value: Any) -> str:
     return str((feature.get("valueLabels") or {}).get(str(value), value))
 
 
+def is_placeholder_label(value: Any, column: dict[str, Any]) -> bool:
+    normalized = normalize_identifier(value)
+    if not normalized:
+        return True
+    column_tokens = {
+        normalize_identifier(column.get("id")),
+        normalize_identifier(column.get("name")),
+        normalize_identifier(column.get("displayName")),
+    }
+    return normalized in column_tokens or normalized.startswith("col")
+
+
+def column_label(mapped_column: dict[str, Any], column: dict[str, Any]) -> str:
+    feature_config = mapped_column.get("featureConfig") or {}
+    for candidate in [
+        mapped_column.get("businessName"),
+        feature_config.get("label"),
+        column.get("displayName"),
+        column.get("name"),
+        column.get("id"),
+    ]:
+        if candidate and not is_placeholder_label(candidate, column):
+            return str(candidate).replace("_", " ").strip()
+    fallback = str(column.get("displayName") or column.get("name") or column.get("id") or "feature")
+    return fallback.replace("_", " ").strip()
+
+
+def feature_label(base_label: str, aggregation: str | None, window: dict[str, Any] | None = None, derived_kind: str | None = None) -> str:
+    window_text = time_window_label(window)
+    if derived_kind == "recency_days":
+        return f"{base_label} recency days{window_text}"
+    if derived_kind == "category_value_counts":
+        return f"{base_label} value counts{window_text}"
+    aggregation_labels = {
+        "count": "count",
+        "distinct_count": "unique count",
+        "sum": "sum",
+        "avg": "average",
+        "min": "minimum",
+        "max": "maximum",
+    }
+    if aggregation in {None, "none", "latest"}:
+        return f"{base_label}{window_text}"
+    return f"{base_label} {aggregation_labels.get(str(aggregation), str(aggregation))}{window_text}"
+
+
 def config_blocked_keys(config: dict[str, Any] | None) -> set[str]:
     if not config:
         return set()
@@ -531,15 +577,10 @@ def build_autopilot_feature_descriptors(
         seen_keys.add(feature_key)
         data_type = column.get("dataType")
         value_type = "numeric" if data_type in {"integer", "float", "boolean"} or aggregation in {"count", "distinct_count"} or derived_kind in {"recency_days", "category_value_counts"} else "categorical"
+        base_label = column_label(mapped_column, column)
         generated.append({
             "featureKey": feature_key,
-            "label": (
-                f"{column.get('displayName') or column.get('name')} recency days{time_window_label(window)}"
-                if derived_kind == "recency_days"
-                else f"{column.get('displayName') or column.get('name')} value counts{time_window_label(window)}"
-                if derived_kind == "category_value_counts"
-                else f"{column.get('displayName') or column.get('name')} {aggregation}{time_window_label(window)}"
-            ),
+            "label": feature_label(base_label, aggregation, window, derived_kind),
             "sourceColumnName": column.get("name"),
             "sourceColumnId": column.get("id"),
             "sourceTableId": table.get("id"),
@@ -927,6 +968,10 @@ def derive_numeric_combination_features(
     for left, right in combinations(numeric_features, 2):
         if generated_count >= max_generated_features:
             break
+        left_category = left.get("category")
+        right_category = right.get("category")
+        if left_category == "profile" and right_category == "profile":
+            continue
         left_key = left["featureKey"]
         right_key = right["featureKey"]
         for kind in ["ratio", "product"]:
@@ -964,9 +1009,10 @@ def derive_numeric_combination_features(
                     row.pop(feature_key, None)
                 existing_keys.discard(feature_key)
                 continue
+            operator_label = "ratio to" if kind == "ratio" else "x"
             features.append({
                 "featureKey": feature_key,
-                "label": f"{left.get('label')} {kind} {right.get('label')}",
+                "label": f"{left.get('label')} {operator_label} {right.get('label')}",
                 "sourceTableDisplayName": left.get("sourceTableDisplayName") or right.get("sourceTableDisplayName"),
                 "sourceColumnName": f"{left.get('sourceColumnName')}:{right.get('sourceColumnName')}",
                 "dataType": "float",
