@@ -1,9 +1,26 @@
+# Dependencies
 node_modules/
+api/node_modules/
+
+# Build outputs
 dist/
 *.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Local runtime files
 *.log
 .env
 .env.*
+local.settings.json
+
+# Python generated files
 __pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+analysis-function/.python_packages/
+analysis-function/autoinsight_analysis/
+
+# Review and verification artifacts
 review-artifacts/

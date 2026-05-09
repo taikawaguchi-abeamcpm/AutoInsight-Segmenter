@@ -1,181 +1,19 @@
 const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
 const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
-const { correlationId, makeHash, nowIso } = require('../src/http');
+const { makeHash, nowIso } = require('../src/http');
 const { buildCustomerListResult, buildRealAnalysisResult, enqueueRemoteAnalysisJob, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 const { completeOnboarding, getOrCreateUserSession } = require('../src/auth');
+const { error, json, logError, publicOrigin, readBody, readHeader } = require('./httpUtils');
+const {
+  failedAnalysisResult,
+  normalizeAnalysisResultForStorage,
+  queuedAnalysisResult
+} = require('./analysisResultUtils');
 
 const actor = 'system';
 
 const getStore = () => require('../src/cosmosStore');
-
-const json = (context, status, body) => {
-  context.res = {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store'
-    },
-    body
-  };
-};
-
-const error = (context, status, code, message, targetPath) => {
-  json(context, status, {
-    code,
-    message,
-    severity: 'error',
-    retryable: status >= 500,
-    targetPath,
-    correlationId: correlationId()
-  });
-};
-
-const logError = (context, ...args) => {
-  if (typeof context?.log?.error === 'function') {
-    context.log.error(...args);
-    return;
-  }
-
-  if (typeof context?.log === 'function') {
-    context.log(...args);
-  }
-};
-
-const looksLikeHtml = (value) =>
-  typeof value === 'string' && /<html[\s>]|<!doctype html|<body[\s>]|<h\d[\s>]/i.test(value);
-
-const compactErrorText = (value) =>
-  String(value || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const truncateText = (value, maxLength = 2000) => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-};
-
-const toJsonSafeValue = (value, depth = 0) => {
-  if (value === undefined) return undefined;
-  if (value === null || typeof value === 'boolean' || typeof value === 'string') return truncateText(value);
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) {
-    if (depth > 8) return [];
-    return value.map((item) => toJsonSafeValue(item, depth + 1)).filter((item) => item !== undefined);
-  }
-  if (typeof value === 'object') {
-    if (depth > 8) return {};
-    return Object.fromEntries(
-      Object.entries(value)
-        .map(([key, item]) => [key, toJsonSafeValue(item, depth + 1)])
-        .filter(([, item]) => item !== undefined)
-    );
-  }
-
-  return String(value);
-};
-
-const normalizeAnalysisResultForStorage = ({ analysisResult, analysisJobId, runId, mapping, dataset, config }) => {
-  const normalized = toJsonSafeValue({
-    ...analysisResult,
-    id: analysisResult?.analysisJobId || analysisJobId,
-    analysisJobId: analysisResult?.analysisJobId || analysisJobId,
-    runId: analysisResult?.runId || runId,
-    datasetId: analysisResult?.datasetId || dataset?.id || mapping?.datasetId || 'unknown',
-    mappingDocumentId: analysisResult?.mappingDocumentId || mapping?.id || 'unknown',
-    mode: analysisResult?.mode || config?.mode || 'custom',
-    status: analysisResult?.status || 'failed',
-    progressPercent: analysisResult?.progressPercent ?? 100,
-    message: analysisResult?.message || 'Analysis finished without a message.',
-    summary: analysisResult?.summary || {
-      analyzedRowCount: 0,
-      topFeatureCount: 0,
-      validPatternCount: 0,
-      recommendedSegmentCount: 0
-    },
-    featureImportances: (analysisResult?.featureImportances || []).slice(0, 100),
-    interactionPairs: (analysisResult?.interactionPairs || []).slice(0, 50),
-    goldenPatterns: analysisResult?.goldenPatterns || [],
-    segmentRecommendations: analysisResult?.segmentRecommendations || [],
-    analysisRows: analysisResult?.analysisRows || []
-  });
-
-  return {
-    ...normalized,
-    id: normalized.analysisJobId,
-    jobId: normalized.analysisJobId,
-    partitionKey: normalized.analysisJobId
-  };
-};
-
-const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, message, detail }) => {
-  const timestamp = nowIso();
-  const safeMessage = looksLikeHtml(message)
-    ? 'Python analysis worker returned an HTML server error. Check the Function App logs.'
-    : message;
-  const safeDetail = detail || (looksLikeHtml(message) ? compactErrorText(message).slice(0, 1000) : undefined);
-  return {
-    id: analysisJobId,
-    analysisJobId,
-    runId,
-    datasetId: dataset?.id || mapping?.datasetId || 'unknown',
-    mappingDocumentId: mapping?.id || 'unknown',
-    mode: config?.mode || 'custom',
-    status: 'failed',
-    progressPercent: 100,
-    message: safeMessage,
-    detail: safeDetail,
-    createdAt: timestamp,
-    startedAt: timestamp,
-    completedAt: timestamp,
-    summary: {
-      analyzedRowCount: 0,
-      topFeatureCount: 0,
-      validPatternCount: 0,
-      recommendedSegmentCount: 0
-    },
-    featureImportances: [],
-    interactionPairs: [],
-    goldenPatterns: [],
-    segmentRecommendations: []
-  };
-};
-
-const readBody = (req) => {
-  if (typeof req.body === 'string') {
-    return JSON.parse(req.body);
-  }
-
-  return req.body || {};
-};
-
-const readHeader = (req, name) => {
-  const headers = req.headers || {};
-  const lowerName = name.toLowerCase();
-
-  if (typeof headers.get === 'function') {
-    return headers.get(name) || headers.get(lowerName);
-  }
-
-  return headers[name] || headers[lowerName] || headers[name.toUpperCase()];
-};
-
-const publicOrigin = (req) => {
-  const host = readHeader(req, 'x-forwarded-host') || readHeader(req, 'host');
-  const proto = readHeader(req, 'x-forwarded-proto') || 'https';
-  if (!host) {
-    return '';
-  }
-
-  return `${String(proto).split(',')[0]}://${String(host).split(',')[0]}`;
-};
 
 const callbackToken = () => randomBytes(32).toString('base64url');
 
@@ -190,30 +28,6 @@ const verifyCallbackToken = (token, expectedHash) => {
   const expected = Buffer.from(String(expectedHash), 'hex');
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 };
-
-const queuedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, now }) => ({
-  id: analysisJobId,
-  analysisJobId,
-  runId,
-  datasetId: dataset?.id || mapping?.datasetId || 'unknown',
-  mappingDocumentId: mapping?.id || 'unknown',
-  mode: config?.mode || 'custom',
-  status: 'queued',
-  progressPercent: 0,
-  message: 'Analysis job is queued.',
-  createdAt: now,
-  startedAt: now,
-  summary: {
-    analyzedRowCount: 0,
-    topFeatureCount: 0,
-    validPatternCount: 0,
-    recommendedSegmentCount: 0
-  },
-  featureImportances: [],
-  interactionPairs: [],
-  goldenPatterns: [],
-  segmentRecommendations: []
-});
 
 const sanitize = (connection) => {
   const { clientSecret, ...safe } = connection;

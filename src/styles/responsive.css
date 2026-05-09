@@ -1,0 +1,116 @@
+﻿@media (max-width: 1100px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding: 14px;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .brand {
+    margin-bottom: 12px;
+  }
+
+  .step-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .step-nav button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    min-height: 58px;
+    text-align: center;
+    font-size: 12px;
+  }
+
+  .step-nav button.admin-step {
+    grid-template-columns: 1fr;
+  }
+
+  .step-nav button span {
+    display: none;
+  }
+
+  .main-content {
+    padding: 18px;
+    height: auto;
+    min-height: 0;
+  }
+
+  .toolbar,
+  .two-column,
+  .admin-grid,
+  .mapping-grid,
+  .mapping-workspace,
+  .segment-grid,
+  .kpi-strip,
+  .action-insight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mapping-source-panel {
+    max-height: none;
+  }
+
+  .action-bar {
+    left: 18px;
+    right: 18px;
+  }
+
+  .mapping-action-bar {
+    left: auto;
+    right: auto;
+  }
+
+  .admin-action-bar {
+    left: 18px;
+  }
+
+  .account-bar {
+    margin-top: 12px;
+  }
+
+  .account-bar div {
+    max-width: none;
+  }
+
+  .saved-result-row {
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(100px, auto));
+  }
+}
+
+@media (max-width: 720px) {
+  .screen-header,
+  .action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .metrics-grid,
+  .connection-summary,
+  .form-grid,
+  .role-grid,
+  .role-assignment-grid,
+  .join-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .bar-list button,
+  .feature-row,
+  .condition-row,
+  .status-strip,
+  .checklist-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-result-row {
+    grid-template-columns: 1fr;
+  }
+}

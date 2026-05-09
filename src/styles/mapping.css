@@ -1,0 +1,239 @@
+﻿.segmented,
+.tab-row {
+  display: inline-grid;
+  grid-auto-flow: column;
+  border: 1px solid #ccd8dd;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.segmented button,
+.tab-row button {
+  border: 0;
+  background: transparent;
+  padding: 10px 14px;
+  color: #53656f;
+}
+
+.segmented button.selected,
+.tab-row button.selected {
+  background: #dff3ec;
+  color: #135d4a;
+  font-weight: 700;
+}
+
+.two-column {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.1fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.mapping-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.mapping-source-panel,
+.mapping-editor,
+.editor-panel {
+  min-width: 0;
+}
+
+.mapping-source-panel {
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.source-tree,
+.source-columns,
+.mapping-editor,
+.editor-form,
+.join-editor-list,
+.feature-check-list {
+  display: grid;
+  gap: 10px;
+}
+
+.source-table > button,
+.source-columns button,
+.feature-check-row {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d9e3e7;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.source-table > button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+}
+
+.source-table > button.selected,
+.source-columns button.selected {
+  border-color: #1d7660;
+  background: #f0faf6;
+}
+
+.source-table span,
+.source-columns span,
+.feature-check-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.source-table strong,
+.source-columns strong,
+.feature-check-row strong {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.source-table small,
+.source-columns small,
+.feature-check-row small,
+.subtle-text {
+  color: #687983;
+  overflow-wrap: anywhere;
+}
+
+.source-columns {
+  margin: 6px 0 0 18px;
+}
+
+.source-columns button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+}
+
+.source-columns button span {
+  min-width: 0;
+}
+
+.mapping-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mapping-tabs button {
+  border: 1px solid #cbd9de;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 14px;
+  color: #53656f;
+}
+
+.mapping-tabs button.selected {
+  border-color: #1d7660;
+  background: #dff3ec;
+  color: #135d4a;
+  font-weight: 700;
+}
+
+.editor-panel {
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.editor-form {
+  max-width: 760px;
+}
+
+.editor-form textarea {
+  resize: vertical;
+}
+
+.category-value-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.category-value-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) minmax(160px, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.category-value-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.category-value-row strong,
+.category-value-row small {
+  overflow-wrap: anywhere;
+}
+
+.join-editor-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #d9e3e7;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.join-editor-row .field {
+  min-width: 0;
+}
+
+.join-editor-row .icon-button {
+  justify-self: end;
+}
+
+.role-assignment-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.feature-check-list {
+  max-height: 430px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.feature-check-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+}
+
+.feature-check-row input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.feature-check-row span {
+  min-width: 0;
+}
+

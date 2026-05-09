@@ -1,0 +1,276 @@
+﻿.segment-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr) minmax(300px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, var(--admin-list-width)) minmax(0, 1fr);
+  gap: var(--admin-grid-gap);
+  align-items: start;
+}
+
+.list-panel,
+.detail-panel {
+  min-width: 0;
+}
+
+.panel,
+.dataset-card {
+  border: 1px solid #d9e3e7;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(30, 51, 60, 0.06);
+}
+
+.panel {
+  padding: 18px;
+}
+
+.loading-panel {
+  display: grid;
+  gap: 6px;
+}
+
+.loading-panel p {
+  margin: 0;
+  color: #60737c;
+}
+
+.panel-heading {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-heading h2,
+.detail-section h3 {
+  margin: 0;
+}
+
+.panel-heading h2 {
+  font-size: 18px;
+}
+
+.list-panel,
+.schema-list,
+.pattern-list,
+.condition-list,
+.bar-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dataset-card,
+.pattern-list button,
+.bar-list button,
+.schema-table > button,
+.column-row {
+  width: 100%;
+  border: 1px solid #d9e3e7;
+  text-align: left;
+}
+
+.dataset-card {
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.dataset-card.selected,
+.pattern-list button.selected,
+.bar-list button.selected,
+.schema-table > button.selected,
+.column-row.selected {
+  border-color: #1d7660;
+  background: #f0faf6;
+}
+
+.dataset-card h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.dataset-card p {
+  overflow-wrap: anywhere;
+}
+
+.connection-list-title,
+.connection-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-list-title {
+  justify-content: space-between;
+}
+
+.connection-list-title h2,
+.connection-title-row h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-panel-heading {
+  align-items: flex-start;
+}
+
+.connection-title-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connection-title-row {
+  flex-wrap: wrap;
+}
+
+.connection-title-row h2 {
+  font-size: 22px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge-neutral {
+  background: #eef2f4;
+  color: #4a5c66;
+}
+
+.badge-success {
+  background: #dff3ec;
+  color: #14614d;
+}
+
+.badge-warning {
+  background: #fff1cf;
+  color: #77520a;
+}
+
+.badge-danger {
+  background: #fde5e1;
+  color: #a12c21;
+}
+
+.badge-info {
+  background: #e3efff;
+  color: #245a9a;
+}
+
+.card-row,
+.tag-row,
+.subtle-row {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag-row span,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cfdde3;
+  border-radius: 999px;
+  background: #f7fafb;
+  color: #3d4d56;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.chip.strong {
+  border-color: #78bda8;
+  background: #e9f7f2;
+  color: #135d4a;
+  font-weight: 700;
+}
+
+.subtle-row {
+  color: #697b84;
+  font-size: 12px;
+}
+
+.metrics-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.kpi-strip {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.metric {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8e3e8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.metric span,
+.metric small {
+  color: #60737c;
+  font-size: 12px;
+}
+
+.metric strong {
+  font-size: 20px;
+}
+
+.connection-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 18px;
+  border-block: 1px solid #e0e8ec;
+  background: #f8fbfc;
+  padding: 12px 14px;
+}
+
+.connection-summary div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connection-summary dt {
+  color: #60737c;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.connection-summary dd {
+  min-width: 0;
+  margin: 0;
+  color: #15232b;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.detail-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.clean-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
