@@ -7,10 +7,8 @@ import { DatasetSelectionScreen } from './components/dataset/DatasetSelectionScr
 import { MappingScreen } from './components/mapping/MappingScreen';
 import { ResultsVisualizationScreen } from './components/results/ResultsVisualizationScreen';
 import { SavedResultsScreen } from './components/results/SavedResultsScreen';
-import { SegmentCreationScreen } from './components/segment/SegmentCreationScreen';
 import type { SelectedDatasetContext } from './types/dataset';
 import type { FabricDataset, SemanticMappingDocument } from './types/mapping';
-import type { SelectedSegmentContext } from './types/results';
 
 export default function App() {
   const [currentStep, setCurrentStep] = useState<AppStep>('dataset');
@@ -18,7 +16,6 @@ export default function App() {
   const [mapping, setMapping] = useState<SemanticMappingDocument | null>(null);
   const [fabricDataset, setFabricDataset] = useState<FabricDataset | null>(null);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
-  const [segmentContext, setSegmentContext] = useState<SelectedSegmentContext | null>(null);
 
   const unlockedSteps = useMemo(() => {
     const steps: AppStep[] = ['admin', 'dataset', 'results'];
@@ -29,12 +26,9 @@ export default function App() {
     if (mapping) {
       steps.push('analysis');
     }
-    if (segmentContext) {
-      steps.push('segment');
-    }
 
     return steps;
-  }, [analysisJobId, datasetContext, mapping, segmentContext]);
+  }, [datasetContext, mapping]);
 
   const navigate = (step: AppStep) => {
     if (unlockedSteps.includes(step)) {
@@ -52,7 +46,6 @@ export default function App() {
             setMapping(null);
             setFabricDataset(null);
             setAnalysisJobId(null);
-            setSegmentContext(null);
             setCurrentStep('mapping');
           }}
         />
@@ -72,7 +65,6 @@ export default function App() {
             setMapping(nextMapping);
             setFabricDataset(nextDataset);
             setAnalysisJobId(null);
-            setSegmentContext(null);
             setCurrentStep('analysis');
           }}
         />
@@ -87,7 +79,6 @@ export default function App() {
           onBack={() => setCurrentStep('mapping')}
           onStarted={(nextAnalysisJobId) => {
             setAnalysisJobId(nextAnalysisJobId);
-            setSegmentContext(null);
             setCurrentStep('results');
           }}
         />
@@ -101,7 +92,6 @@ export default function App() {
             onBackToDataset={() => setCurrentStep('dataset')}
             onOpenResult={(nextAnalysisJobId) => {
               setAnalysisJobId(nextAnalysisJobId);
-              setSegmentContext(null);
               setCurrentStep('results');
             }}
           />
@@ -120,16 +110,8 @@ export default function App() {
             setAnalysisJobId(null);
             setCurrentStep('results');
           }}
-          onSegmentsSelected={(context) => {
-            setSegmentContext(context);
-            setCurrentStep('segment');
-          }}
         />
       );
-    }
-
-    if (currentStep === 'segment' && segmentContext) {
-      return <SegmentCreationScreen context={segmentContext} onBack={() => setCurrentStep('results')} />;
     }
 
     setCurrentStep('dataset');

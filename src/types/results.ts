@@ -93,6 +93,14 @@ export interface SegmentRecommendation {
   conditions: PatternCondition[];
   useCase?: string;
   priorityScore: number;
+  audienceRows?: SegmentAudienceRow[];
+}
+
+export interface SegmentAudienceRow {
+  customerKey: string;
+  targetValue?: string | number | boolean;
+  attributes?: Record<string, string | number | boolean | null>;
+  matchedReasons?: string[];
 }
 
 export interface AnalysisModelMetadata {

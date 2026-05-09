@@ -1961,6 +1961,27 @@ def segment_candidate_rows(rows: list[dict[str, Any]], pattern: dict[str, Any], 
     return [row for row in matched if row["__target"] != 1]
 
 
+def build_audience_rows(candidate_rows: list[dict[str, Any]], pattern: dict[str, Any]) -> list[dict[str, Any]]:
+    feature_keys = [condition.get("featureKey") for condition in pattern.get("conditions", []) if condition.get("featureKey")]
+    matched_reasons = [condition.get("label") for condition in pattern.get("conditions", []) if condition.get("label")]
+    audience_rows = []
+
+    for row in candidate_rows:
+        attributes = {
+            feature_key: row.get(feature_key)
+            for feature_key in feature_keys
+            if row.get(feature_key) is not None
+        }
+        audience_rows.append({
+            "customerKey": str(row.get("__unitKey") or row.get("__rowId")),
+            "targetValue": row.get("__target"),
+            "attributes": attributes,
+            "matchedReasons": matched_reasons,
+        })
+
+    return audience_rows
+
+
 def failed_result(
     analysis_job_id: str,
     run_id: str,
@@ -2160,6 +2181,7 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
             "conditions": pattern["conditions"],
             "useCase": "未成果候補リスト化",
             "priorityScore": clamp_score((pattern.get("conversionDelta") or 0) * 100 + (len(candidate_rows) / len(rows)) * 40 + 50),
+            "audienceRows": build_audience_rows(candidate_rows, pattern),
         }
         if segment["estimatedAudienceSize"] > 0:
             segments.append(segment)

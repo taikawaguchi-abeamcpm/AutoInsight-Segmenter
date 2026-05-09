@@ -1,17 +1,16 @@
-import { Activity, Database, GitBranch, LineChart, LogOut, PlayCircle, Settings, UserRound, Users } from 'lucide-react';
+import { Activity, Database, GitBranch, LineChart, LogOut, PlayCircle, Settings, UserRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { signOut } from '../../services/auth/authApi';
 import { useAuthSession } from '../auth/AuthGate';
 
-export type AppStep = 'admin' | 'dataset' | 'mapping' | 'analysis' | 'results' | 'segment';
+export type AppStep = 'admin' | 'dataset' | 'mapping' | 'analysis' | 'results';
 
 const steps: Array<{ id: AppStep; label: string; icon: typeof Database }> = [
   { id: 'admin', label: '接続管理', icon: Settings },
   { id: 'dataset', label: 'データセット', icon: Database },
   { id: 'mapping', label: '意味付け', icon: GitBranch },
   { id: 'analysis', label: '分析開始', icon: PlayCircle },
-  { id: 'results', label: '結果', icon: LineChart },
-  { id: 'segment', label: 'セグメント', icon: Users }
+  { id: 'results', label: '結果', icon: LineChart }
 ];
 
 export const Shell = ({

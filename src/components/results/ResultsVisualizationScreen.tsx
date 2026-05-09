@@ -2,7 +2,7 @@ import { Download, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { isAbortError, isApiError } from '../../services/client';
 import { resultsApi } from '../../services/results/resultsApi';
-import type { AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation, SelectedSegmentContext } from '../../types/results';
+import type { AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation } from '../../types/results';
 import { Badge, Button, Card, EmptyState, formatNumber, formatPercent } from '../common/ui';
 
 const operatorLabel: Record<string, string> = {
@@ -144,12 +144,10 @@ const toSegmentRecommendation = (group: OutcomeGroup, result: AnalysisResultDocu
 
 export const ResultsVisualizationScreen = ({
   analysisJobId,
-  onBack,
-  onSegmentsSelected
+  onBack
 }: {
   analysisJobId: string;
   onBack: () => void;
-  onSegmentsSelected: (context: SelectedSegmentContext) => void;
 }) => {
   const [result, setResult] = useState<AnalysisResultDocument | null>(null);
   const [selectedOutcomeIds, setSelectedOutcomeIds] = useState<string[]>([]);
@@ -218,20 +216,6 @@ export const ResultsVisualizationScreen = ({
     );
   };
 
-  const continueToSegments = async () => {
-    if (!result || selectedSegments.length === 0 || result.status !== 'completed') {
-      return;
-    }
-
-    onSegmentsSelected(
-      await resultsApi.prepareSegments({
-        analysisJobId: result.analysisJobId,
-        segmentIds: selectedSegments.map((segment) => segment.id),
-        segments: selectedSegments
-      })
-    );
-  };
-
   const saveResult = async () => {
     if (!result) {
       return;
@@ -251,16 +235,37 @@ export const ResultsVisualizationScreen = ({
       return;
     }
 
-    const headers = ['segmentId', 'name', 'estimatedAudienceSize', 'priorityScore', 'conditions'];
-    const rows = selectedSegments.map((segment) => [
-      segment.id,
-      segmentDisplayName(segment),
-      String(segment.estimatedAudienceSize),
-      String(segment.priorityScore),
-      segment.conditions.map((condition) => conditionSummary([condition])).join(' / ')
+    const rows = selectedSegments.flatMap((segment) =>
+      (segment.audienceRows ?? []).map((row) => ({
+        segmentId: segment.id,
+        segmentName: segment.name,
+        customerKey: row.customerKey,
+        targetValue: row.targetValue,
+        matchedReasons: row.matchedReasons?.join(' / ') ?? '',
+        attributes: row.attributes ?? {}
+      }))
+    );
+
+    if (rows.length === 0) {
+      setActionMessage('この保存済み結果には顧客リストが含まれていません。顧客リストを出力するには、再分析して結果を保存してください。');
+      return;
+    }
+
+    const attributeKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row.attributes))));
+    const headers = ['segmentId', 'segmentName', 'customerKey', 'targetValue', 'matchedReasons', ...attributeKeys];
+    const csvRows = rows.map((row) => [
+      row.segmentId,
+      row.segmentName,
+      row.customerKey,
+      row.targetValue === undefined ? '' : String(row.targetValue),
+      row.matchedReasons,
+      ...attributeKeys.map((key) => {
+        const value = row.attributes[key];
+        return value === undefined || value === null ? '' : String(value);
+      })
     ]);
-    const csv = [headers, ...rows]
-      .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(','))
+    const csv = [headers, ...csvRows]
+      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
@@ -270,11 +275,8 @@ export const ResultsVisualizationScreen = ({
     link.click();
     link.remove();
     URL.revokeObjectURL(link.href);
-    setActionMessage('選択中のセグメント候補をCSVとして出力しました。');
+    setActionMessage(`${formatNumber(rows.length)} 行の顧客リストをCSVとして出力しました。`);
   };
-
-  const segmentDisplayName = (segment: SelectedSegmentContext['segments'][number]) =>
-    segment.conditions.length > 0 ? `${conditionSummary(segment.conditions)} 未成果候補` : stripDecimalSuffixes(segment.name);
 
   if (!result) {
     return (
@@ -349,8 +351,7 @@ export const ResultsVisualizationScreen = ({
         <span>{completed ? '確定済み' : '更新中'}</span>
         <strong>{selectedSegments.length > 0 ? `${selectedSegments.length} 件の候補を選択` : '候補未選択'}</strong>
         <div className="actions">
-          <Button variant="secondary" onClick={exportSegmentsCsv} disabled={!completed || selectedSegments.length === 0}><Download size={16} /> CSV 出力</Button>
-          <Button onClick={continueToSegments} disabled={!completed || selectedSegments.length === 0}>セグメント作成へ進む</Button>
+          <Button onClick={exportSegmentsCsv} disabled={!completed || selectedSegments.length === 0}><Download size={16} /> 顧客リストCSV</Button>
         </div>
       </footer>
     </div>
