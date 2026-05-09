@@ -40,7 +40,7 @@ export const SavedResultsScreen = ({
     resultsApi
       .listSavedResults({ signal: controller.signal })
       .then((nextResults) => {
-        setResults(nextResults);
+        setResults(Array.isArray(nextResults) ? nextResults : []);
         setErrorMessage(null);
       })
       .catch((error: unknown) => {

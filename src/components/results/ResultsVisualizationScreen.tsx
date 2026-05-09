@@ -52,6 +52,11 @@ type OutcomeGroup = {
   conditions: PatternCondition[];
 };
 
+type ActionNotice = {
+  tone: 'success' | 'warning' | 'error';
+  message: string;
+};
+
 const comparableValue = (value: string | number | boolean) =>
   stripDecimalSuffixes(String(value)).trim().toLowerCase();
 
@@ -142,6 +147,47 @@ const toSegmentRecommendation = (group: OutcomeGroup, result: AnalysisResultDocu
     priorityScore: Math.round(((group.pattern?.lift ?? 1) * 100) + ((group.pattern?.conversionDelta ?? 0) * 100))
   };
 
+const rowsFromSegments = (segments: SegmentRecommendation[]) =>
+  segments.flatMap((segment) =>
+    (segment.audienceRows ?? []).map((row) => ({
+      segmentId: segment.id,
+      segmentName: segment.name,
+      customerKey: row.customerKey,
+      targetValue: row.targetValue,
+      matchedReasons: row.matchedReasons?.join(' / ') ?? '',
+      attributes: row.attributes ?? {}
+    }))
+  );
+
+const mergeAudienceRows = (result: AnalysisResultDocument, hydratedSegments: SegmentRecommendation[]): AnalysisResultDocument => {
+  if (hydratedSegments.length === 0) {
+    return result;
+  }
+
+  const byId = new Map(hydratedSegments.map((segment) => [segment.id, segment]));
+  const byConditions = new Map(hydratedSegments.map((segment) => [canonicalGroupKey(compactConditions(segment.conditions)), segment]));
+  const usedIds = new Set<string>();
+  const mergedRecommendations = result.segmentRecommendations.map((segment) => {
+    const hydrated = byId.get(segment.id) ?? byConditions.get(canonicalGroupKey(compactConditions(segment.conditions)));
+    if (!hydrated) {
+      return segment;
+    }
+
+    usedIds.add(hydrated.id);
+    return {
+      ...segment,
+      estimatedAudienceSize: hydrated.estimatedAudienceSize,
+      audienceRows: hydrated.audienceRows
+    };
+  });
+  const additions = hydratedSegments.filter((segment) => !usedIds.has(segment.id));
+
+  return {
+    ...result,
+    segmentRecommendations: [...mergedRecommendations, ...additions]
+  };
+};
+
 export const ResultsVisualizationScreen = ({
   analysisJobId,
   onBack
@@ -152,8 +198,9 @@ export const ResultsVisualizationScreen = ({
   const [result, setResult] = useState<AnalysisResultDocument | null>(null);
   const [selectedOutcomeIds, setSelectedOutcomeIds] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
   const [savingResult, setSavingResult] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -180,24 +227,24 @@ export const ResultsVisualizationScreen = ({
       return [];
     }
 
-    const groups = result.segmentRecommendations.map((segment) => ({
+    const segmentGroups = result.segmentRecommendations.map((segment) => ({
       id: segment.id,
       segment,
       pattern: result.goldenPatterns.find((pattern) => pattern.id === segment.sourcePatternId),
       conditions: segment.conditions
     }));
-
-    if (groups.length > 0) {
-      return dedupeOutcomeGroups(groups);
-    }
-
-    return dedupeOutcomeGroups(
-      result.goldenPatterns.map((pattern) => ({
+    const segmentPatternIds = new Set(segmentGroups.map((group) => group.segment.sourcePatternId).filter(Boolean));
+    const segmentConditionKeys = new Set(segmentGroups.map((group) => canonicalGroupKey(compactConditions(group.conditions))));
+    const patternGroups = result.goldenPatterns
+      .filter((pattern) => !segmentPatternIds.has(pattern.id))
+      .filter((pattern) => !segmentConditionKeys.has(canonicalGroupKey(compactConditions(pattern.conditions))))
+      .map((pattern) => ({
         id: pattern.id,
         pattern,
         conditions: pattern.conditions
-      }))
-    );
+      }));
+
+    return dedupeOutcomeGroups([...segmentGroups, ...patternGroups]);
   }, [result]);
 
   const selectedGroups = useMemo(
@@ -224,58 +271,76 @@ export const ResultsVisualizationScreen = ({
     setSavingResult(true);
     try {
       await resultsApi.saveResult(result);
-      setActionMessage('分析結果を保存しました。');
+      setActionNotice({ tone: 'success', message: '分析結果を保存しました。' });
     } finally {
       setSavingResult(false);
     }
   };
 
-  const exportSegmentsCsv = () => {
+  const exportSegmentsCsv = async () => {
     if (selectedSegments.length === 0) {
       return;
     }
 
-    const rows = selectedSegments.flatMap((segment) =>
-      (segment.audienceRows ?? []).map((row) => ({
-        segmentId: segment.id,
-        segmentName: segment.name,
-        customerKey: row.customerKey,
-        targetValue: row.targetValue,
-        matchedReasons: row.matchedReasons?.join(' / ') ?? '',
-        attributes: row.attributes ?? {}
-      }))
-    );
+    setExportingCsv(true);
+    setActionNotice(null);
 
-    if (rows.length === 0) {
-      setActionMessage('この保存済み結果には顧客リストが含まれていません。顧客リストを出力するには、再分析して結果を保存してください。');
-      return;
+    try {
+      let exportSegments = selectedSegments;
+      let rows = rowsFromSegments(exportSegments);
+
+      if (rows.length === 0 && result) {
+        setActionNotice({ tone: 'warning', message: '保存済みの分析条件から顧客リストを準備しています。' });
+        const response = await resultsApi.getCustomerList(result.analysisJobId, selectedSegments);
+        exportSegments = response.segments ?? [];
+        rows = rowsFromSegments(exportSegments);
+
+        if (exportSegments.length > 0) {
+          setResult((current) => (current ? mergeAudienceRows(current, exportSegments) : current));
+        }
+      }
+
+      if (rows.length === 0) {
+        setActionNotice({
+          tone: 'error',
+          message: '顧客リストを作成できませんでした。分析を再実行してから結果を保存してください。'
+        });
+        return;
+      }
+
+      const attributeKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row.attributes))));
+      const headers = ['segmentId', 'segmentName', 'customerKey', 'targetValue', 'matchedReasons', ...attributeKeys];
+      const csvRows = rows.map((row) => [
+        row.segmentId,
+        row.segmentName,
+        row.customerKey,
+        row.targetValue === undefined ? '' : String(row.targetValue),
+        row.matchedReasons,
+        ...attributeKeys.map((key) => {
+          const value = row.attributes[key];
+          return value === undefined || value === null ? '' : String(value);
+        })
+      ]);
+      const csv = [headers, ...csvRows]
+        .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `autoinsight-customer-list-${result?.analysisJobId ?? 'result'}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      setActionNotice({ tone: 'success', message: `${formatNumber(rows.length)} 行の顧客リストをCSVとして出力しました。` });
+    } catch (error: unknown) {
+      setActionNotice({
+        tone: 'error',
+        message: isApiError(error) || error instanceof Error ? error.message : '顧客リストを作成できませんでした。'
+      });
+    } finally {
+      setExportingCsv(false);
     }
-
-    const attributeKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row.attributes))));
-    const headers = ['segmentId', 'segmentName', 'customerKey', 'targetValue', 'matchedReasons', ...attributeKeys];
-    const csvRows = rows.map((row) => [
-      row.segmentId,
-      row.segmentName,
-      row.customerKey,
-      row.targetValue === undefined ? '' : String(row.targetValue),
-      row.matchedReasons,
-      ...attributeKeys.map((key) => {
-        const value = row.attributes[key];
-        return value === undefined || value === null ? '' : String(value);
-      })
-    ]);
-    const csv = [headers, ...csvRows]
-      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `autoinsight-segments-${result?.analysisJobId ?? 'result'}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(link.href);
-    setActionMessage(`${formatNumber(rows.length)} 行の顧客リストをCSVとして出力しました。`);
   };
 
   if (!result) {
@@ -305,7 +370,7 @@ export const ResultsVisualizationScreen = ({
         </div>
       </header>
 
-      {actionMessage ? <p className="notice success">{actionMessage}</p> : null}
+      {actionNotice ? <p className={`notice ${actionNotice.tone}`}>{actionNotice.message}</p> : null}
 
       <Card>
         <div className="panel-heading">
@@ -351,7 +416,9 @@ export const ResultsVisualizationScreen = ({
         <span>{completed ? '確定済み' : '更新中'}</span>
         <strong>{selectedSegments.length > 0 ? `${selectedSegments.length} 件の候補を選択` : '候補未選択'}</strong>
         <div className="actions">
-          <Button onClick={exportSegmentsCsv} disabled={!completed || selectedSegments.length === 0}><Download size={16} /> 顧客リストCSV</Button>
+          <Button onClick={exportSegmentsCsv} disabled={!completed || selectedSegments.length === 0 || exportingCsv}>
+            <Download size={16} /> {exportingCsv ? '準備中' : '顧客リストCSV'}
+          </Button>
         </div>
       </footer>
     </div>

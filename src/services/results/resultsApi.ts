@@ -1,5 +1,5 @@
 import { apiRequest, createApiError, delay, type RequestOptions } from '../client';
-import type { AnalysisResultDocument, SavedAnalysisResultListItem, SelectedSegmentContext } from '../../types/results';
+import type { AnalysisResultDocument, SavedAnalysisResultListItem, SegmentRecommendation, SelectedSegmentContext } from '../../types/results';
 
 const SAVED_RESULTS_KEY = 'autoinsight.savedAnalysisResults.v1';
 
@@ -42,14 +42,31 @@ const toListItem = (result: AnalysisResultDocument & { updatedAt?: string }): Sa
   summary: result.summary
 });
 
+const asSavedResultList = (value: unknown): SavedAnalysisResultListItem[] | null => {
+  if (Array.isArray(value)) {
+    return value as SavedAnalysisResultListItem[];
+  }
+
+  if (typeof value === 'object' && value !== null && Array.isArray((value as { data?: unknown }).data)) {
+    return (value as { data: SavedAnalysisResultListItem[] }).data;
+  }
+
+  return null;
+};
+
+export interface CustomerListResult {
+  segments: SegmentRecommendation[];
+}
+
 export const resultsApi = {
   async listSavedResults(options: RequestOptions = {}): Promise<SavedAnalysisResultListItem[]> {
     try {
-      const response = await apiRequest<SavedAnalysisResultListItem[]>('/analysis-results', {
+      const response = await apiRequest<unknown>('/analysis-results', {
         signal: options.signal
       });
-      if (Array.isArray(response)) {
-        return response;
+      const results = asSavedResultList(response);
+      if (results) {
+        return results;
       }
     } catch (error) {
       if (isAbortLike(error)) {
@@ -110,6 +127,16 @@ export const resultsApi = {
 
     await delay(120, options.signal);
     return rememberLocalResult(result);
+  },
+
+  async getCustomerList(analysisJobId: string, segments: SegmentRecommendation[], options: RequestOptions = {}): Promise<CustomerListResult> {
+    const response = await apiRequest<CustomerListResult>(`/analysis-results/${encodeURIComponent(analysisJobId)}/customer-list`, {
+      method: 'POST',
+      body: JSON.stringify({ segments }),
+      signal: options.signal
+    });
+
+    return response ?? { segments: [] };
   }
 };
 
