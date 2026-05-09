@@ -425,7 +425,11 @@ def is_leakage_like_feature(
     post_outcome_terms = (
         "converted", "conversion", "outcome", "result", "won", "lost", "closed",
         "contract_date", "close_date", "cancelled", "canceled", "churned",
-        "success", "failure", "成約", "受注", "失注", "契約日", "解約", "結果",
+        "success", "failure", "sales", "revenue", "amount", "profit", "margin",
+        "order_total", "purchase_total", "paid", "payment", "成約", "受注", "失注",
+        "契約日", "解約", "結果", "成果", "成功", "失敗", "達成", "完了", "売上",
+        "販売", "販売量", "販売金額", "購入", "購入金額", "注文金額", "受注金額",
+        "粗利", "利益", "入金", "支払",
     )
     return any(term in text for term in post_outcome_terms)
 

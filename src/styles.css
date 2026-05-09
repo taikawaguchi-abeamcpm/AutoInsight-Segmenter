@@ -1190,83 +1190,71 @@ textarea {
   background: #ffffff;
 }
 
-.outcome-group-list {
-  display: grid;
-  gap: 12px;
+.outcome-table-wrap {
+  overflow-x: auto;
 }
 
-.outcome-group-card {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(220px, 0.38fr);
-  align-items: start;
-  gap: 14px;
+.outcome-table {
   width: 100%;
-  min-width: 0;
+  min-width: 860px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
   border: 1px solid #d9e3e7;
   border-radius: 8px;
-  background: #ffffff;
-  padding: 16px;
 }
 
-.outcome-group-card.selected {
-  border-color: #1d7660;
-  background: #f0faf6;
+.outcome-table th,
+.outcome-table td {
+  border-bottom: 1px solid #e1e9ed;
+  padding: 14px 16px;
+  text-align: left;
+  vertical-align: middle;
 }
 
-.outcome-group-card:hover {
-  border-color: #1d7660;
+.outcome-table th {
+  background: #f6fafb;
+  color: #526873;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.outcome-group-main {
+.outcome-table tbody tr {
+  cursor: pointer;
+}
+
+.outcome-table tbody tr:hover,
+.outcome-table tbody tr.selected {
+  background: #eff9f5;
+}
+
+.outcome-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.outcome-table td:nth-child(n + 2),
+.outcome-table th:nth-child(n + 2) {
+  width: 140px;
+  white-space: nowrap;
+}
+
+.outcome-condition-cell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: 12px;
+  margin: 0;
+  cursor: pointer;
 }
 
-.outcome-group-main input {
+.outcome-condition-cell input {
   width: 18px;
   height: 18px;
-  margin-top: 2px;
 }
 
-.outcome-group-copy {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.outcome-group-copy strong {
+.outcome-condition-cell span {
   color: #14232c;
-  font-size: 18px;
-  overflow-wrap: anywhere;
-}
-
-.outcome-summary-cards {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
-
-.outcome-summary-cards div {
-  display: grid;
-  gap: 4px;
-  border: 1px solid #e0e8ec;
-  border-radius: 8px;
-  background: #f8fbfc;
-  padding: 12px;
-}
-
-.outcome-summary-cards span {
-  color: #60737c;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.outcome-summary-cards strong {
-  font-size: 16px;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -1482,15 +1470,6 @@ textarea {
 
   .account-bar div {
     max-width: none;
-  }
-
-  .outcome-group-card {
-    grid-template-columns: 1fr;
-  }
-
-  .outcome-summary-cards {
-    grid-column: auto;
-    grid-row: auto;
   }
 
   .saved-result-row {

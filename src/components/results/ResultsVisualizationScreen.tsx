@@ -52,6 +52,12 @@ type OutcomeGroup = {
   conditions: PatternCondition[];
 };
 
+type SegmentMetric = {
+  totalCount: number;
+  remainingCount: number;
+  effectDelta?: number;
+};
+
 type ActionNotice = {
   tone: 'success' | 'warning' | 'error';
   message: string;
@@ -116,14 +122,8 @@ const dedupeOutcomeGroups = (groups: OutcomeGroup[]) => {
 const outcomeGroupName = (group: OutcomeGroup) =>
   stripDecimalSuffixes(group.segment?.name || group.pattern?.title || conditionSummary(group.conditions));
 
-const outcomeEffectText = (pattern?: GoldenPatternResult) => {
-  const parts = [
-    typeof pattern?.conversionDelta === 'number' ? `平均との差 ${formatPercent(pattern.conversionDelta)}` : null,
-    typeof pattern?.lift === 'number' ? `全体比 ${pattern.lift.toFixed(2)} 倍` : null
-  ].filter(Boolean);
-
-  return parts.length > 0 ? parts.join(' / ') : '効果見込みを確認中';
-};
+const formatEffectDelta = (value?: number) =>
+  typeof value === 'number' ? `${value >= 0 ? '+' : ''}${formatPercent(value)}` : '-';
 
 const outcomeAudienceSize = (group: OutcomeGroup, result: AnalysisResultDocument) => {
   if (typeof group.segment?.estimatedAudienceSize === 'number' && group.segment.estimatedAudienceSize > 0) {
@@ -217,6 +217,61 @@ const rowsFromAnalysisRows = (analysisRows: AnalysisDataRow[], segments: Segment
       }))
   );
 
+const matchingAnalysisRows = (analysisRows: AnalysisDataRow[] | undefined, segment: SegmentRecommendation) =>
+  (analysisRows ?? []).filter((row) => segment.conditions.every((condition) => matchesCondition(row, condition)));
+
+const segmentMetric = (result: AnalysisResultDocument, group: OutcomeGroup): SegmentMetric => {
+  const segment = toSegmentRecommendation(group, result);
+  const rows = matchingAnalysisRows(result.analysisRows, segment);
+
+  if (rows.length > 0 && result.analysisRows?.length) {
+    const positiveCount = rows.filter((row) => row.targetValue === 1 || row.targetValue === true || row.targetValue === '1').length;
+    const baselinePositiveCount = result.analysisRows.filter((row) => row.targetValue === 1 || row.targetValue === true || row.targetValue === '1').length;
+    const segmentRate = positiveCount / rows.length;
+    const baselineRate = result.analysisRows.length > 0 ? baselinePositiveCount / result.analysisRows.length : 0;
+
+    return {
+      totalCount: rows.length,
+      remainingCount: rows.length - positiveCount,
+      effectDelta: segmentRate - baselineRate
+    };
+  }
+
+  const totalCount = outcomeAudienceSize(group, result);
+  const segmentRate =
+    typeof group.pattern?.conversionDelta === 'number' && typeof result.summary.baselineMetricValue === 'number'
+      ? result.summary.baselineMetricValue + group.pattern.conversionDelta
+      : group.segment?.estimatedConversionRate;
+  const positiveCount = typeof segmentRate === 'number' && totalCount > 0 ? Math.round(totalCount * segmentRate) : 0;
+
+  return {
+    totalCount,
+    remainingCount: totalCount > 0 ? Math.max(totalCount - positiveCount, 0) : 0,
+    effectDelta: group.pattern?.conversionDelta
+  };
+};
+
+const topFeatureColumns = (result: AnalysisResultDocument) =>
+  result.featureImportances
+    .slice()
+    .sort((left, right) => right.importanceScore - left.importanceScore)
+    .slice(0, 5)
+    .map((feature) => ({
+      key: feature.featureKey,
+      label: feature.label
+    }));
+
+const dedupeRowsByCustomer = <T extends { customerKey: string }>(rows: T[]) => {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.customerKey)) {
+      return false;
+    }
+    seen.add(row.customerKey);
+    return true;
+  });
+};
+
 const mergeCustomerListResult = (
   result: AnalysisResultDocument,
   hydratedSegments: SegmentRecommendation[],
@@ -296,7 +351,11 @@ export const ResultsVisualizationScreen = ({
         conditions: pattern.conditions
       }));
 
-    return dedupeOutcomeGroups([...segmentGroups, ...patternGroups]);
+    return dedupeOutcomeGroups([...segmentGroups, ...patternGroups]).sort((left, right) => {
+      const leftMetric = segmentMetric(result, left);
+      const rightMetric = segmentMetric(result, right);
+      return (rightMetric.effectDelta ?? -Infinity) - (leftMetric.effectDelta ?? -Infinity);
+    });
   }, [result]);
 
   const selectedGroups = useMemo(
@@ -360,16 +419,14 @@ export const ResultsVisualizationScreen = ({
         return;
       }
 
-      const attributeKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row.attributes))));
-      const headers = ['segmentId', 'segmentName', 'customerKey', 'targetValue', 'matchedReasons', ...attributeKeys];
+      rows = dedupeRowsByCustomer(rows);
+      const featureColumns = result ? topFeatureColumns(result) : [];
+      const headers = ['customerKey', 'targetValue', ...featureColumns.map((feature) => feature.label)];
       const csvRows = rows.map((row) => [
-        row.segmentId,
-        row.segmentName,
         row.customerKey,
         row.targetValue === undefined ? '' : String(row.targetValue),
-        row.matchedReasons,
-        ...attributeKeys.map((key) => {
-          const value = row.attributes[key];
+        ...featureColumns.map((feature) => {
+          const value = row.attributes[feature.key];
           return value === undefined || value === null ? '' : String(value);
         })
       ]);
@@ -430,41 +487,48 @@ export const ResultsVisualizationScreen = ({
           {!completed ? <Badge tone="warning">暫定</Badge> : <Badge tone="success">{outcomeGroups.length} 件</Badge>}
         </div>
         {outcomeGroups.length === 0 ? <EmptyState title="候補なし" description="成果に結びつく顧客群はまだ生成されていません。" /> : null}
-        <div className="outcome-group-list">
-          {outcomeGroups.map((group, index) => {
-            const selected = selectedOutcomeIds.includes(group.id);
-            const groupSegment = toSegmentRecommendation(group, result);
-            const audienceSize = result.analysisRows?.length
-              ? rowsFromAnalysisRows(result.analysisRows, [groupSegment]).length
-              : outcomeAudienceSize(group, result);
-            return (
-              <label className={selected ? 'outcome-group-card selected' : 'outcome-group-card'} key={group.id}>
-                <div className="outcome-group-main">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleOutcome(group.id)}
-                    aria-label={`${outcomeGroupName(group)}を選択`}
-                  />
-                  <div className="outcome-group-copy">
-                    <span className="insight-rank">候補 {index + 1}</span>
-                    <strong>{outcomeGroupName(group)}</strong>
-                  </div>
-                </div>
-                <div className="outcome-summary-cards">
-                  <div>
-                    <span>該当行数</span>
-                    <strong>{audienceSize > 0 ? `${formatNumber(audienceSize)} 行` : '-'}</strong>
-                  </div>
-                  <div>
-                    <span>期待効果</span>
-                    <strong>{outcomeEffectText(group.pattern)}</strong>
-                  </div>
-                </div>
-              </label>
-            );
-          })}
-        </div>
+        {outcomeGroups.length > 0 ? (
+          <div className="outcome-table-wrap">
+            <table className="outcome-table">
+              <thead>
+                <tr>
+                  <th>セグメント条件</th>
+                  <th>全体件数</th>
+                  <th>残件数</th>
+                  <th>期待効果</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcomeGroups.map((group) => {
+                  const selected = selectedOutcomeIds.includes(group.id);
+                  const metric = segmentMetric(result, group);
+                  return (
+                    <tr
+                      className={selected ? 'selected' : undefined}
+                      key={group.id}
+                      onClick={() => toggleOutcome(group.id)}
+                    >
+                      <td>
+                        <label className="outcome-condition-cell" onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleOutcome(group.id)}
+                            aria-label={`${outcomeGroupName(group)}を選択`}
+                          />
+                          <span>{outcomeGroupName(group)}</span>
+                        </label>
+                      </td>
+                      <td>{metric.totalCount > 0 ? `${formatNumber(metric.totalCount)} 行` : '-'}</td>
+                      <td>{metric.remainingCount > 0 ? `${formatNumber(metric.remainingCount)} 行` : '0 行'}</td>
+                      <td>{formatEffectDelta(metric.effectDelta)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </Card>
 
       <footer className="action-bar">
