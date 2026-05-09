@@ -101,11 +101,18 @@ const normalizeApiErrorPayload = (payload: unknown, fallbackStatus: number, fall
   const source = typeof nestedError === 'object' && nestedError !== null ? nestedError : payload;
   const code = getPayloadValue(source, 'code');
   const message = getPayloadValue(source, 'message') ?? getPayloadValue(source, 'error') ?? getPayloadValue(source, 'title');
+  const normalizeMessage = (value: string): string => {
+    const trimmed = value.trim();
+    if (/^backend call failure$/i.test(trimmed)) {
+      return 'バックエンド呼び出しが失敗しました。分析処理がタイムアウトしたか、API 実行基盤で例外が発生しています。時間を置いて再実行し、解消しない場合は API ログを確認してください。';
+    }
+    return trimmed;
+  };
 
   if (typeof message === 'string' && message.trim()) {
     return createApiError({
       code: typeof code === 'string' && code.trim() ? code : `HTTP.${fallbackStatus}`,
-      message: message.trim(),
+      message: normalizeMessage(message),
       retryable: fallbackStatus >= 500
     });
   }
@@ -113,7 +120,7 @@ const normalizeApiErrorPayload = (payload: unknown, fallbackStatus: number, fall
   if (typeof payload === 'string' && payload.trim()) {
     return createApiError({
       code: `HTTP.${fallbackStatus}`,
-      message: payload.trim(),
+      message: normalizeMessage(payload),
       retryable: fallbackStatus >= 500
     });
   }

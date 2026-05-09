@@ -223,9 +223,10 @@ For large Fabric schemas, the browser sends only the columns needed by the selec
 The current `/api/analysis/start` path is synchronous from the Static Web Apps API perspective, so the worker defaults are intentionally experiment-sized:
 
 ```text
+ANALYSIS_REMOTE_WORKER_TIMEOUT_MS=25000
 FABRIC_ANALYSIS_PAGE_SIZE=500
 FABRIC_ANALYSIS_MAX_ROWS=5000
 ```
 
-Raise these values only after moving analysis execution to an asynchronous job queue or durable worker path.
-The GitHub Actions deployment sets the same values on the Python Function App to avoid stale app settings overriding the code defaults.
+Raise these values only after moving analysis execution to an asynchronous job queue or durable worker path. The Node API intentionally times out the remote worker before the Static Web Apps backend call budget is exhausted, then stores a failed analysis result with diagnostics instead of surfacing a generic `Backend call failure` response.
+The GitHub Actions deployment sets the Fabric row limits on the Python Function App to avoid stale app settings overriding the code defaults.

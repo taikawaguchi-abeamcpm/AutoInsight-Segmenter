@@ -36,7 +36,9 @@ is treated as an API failure by `api/src/analysisEngine.js`.
 ## Configuration
 
 - `PYTHON_EXECUTABLE`: optional path used by the Node adapter
-- `ANALYSIS_WORKER_TIMEOUT_MS`: Node adapter timeout, default 15 minutes
+- `ANALYSIS_REMOTE_WORKER_TIMEOUT_MS`: Node API timeout for the deployed Python worker, default 25 seconds so `/api/analysis/start` can return before the Static Web Apps synchronous backend call is cut off
+- `ANALYSIS_LOCAL_WORKER_TIMEOUT_MS`: local Python worker timeout, default 15 minutes
+- `ANALYSIS_WORKER_TIMEOUT_MS`: legacy override used by both remote and local adapters when the more specific timeout variables are not set
 - `FABRIC_GRAPHQL_TIMEOUT_MS`: GraphQL request timeout
 - `FABRIC_ANALYSIS_PAGE_SIZE`: GraphQL page size, default 500
 - `FABRIC_ANALYSIS_MAX_ROWS`: maximum rows per table fetch, default 5,000 for the synchronous experiment path

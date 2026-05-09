@@ -2,9 +2,10 @@ const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 
-const WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_WORKER_TIMEOUT_MS || 15 * 60 * 1000);
 const WORKER_URL = process.env.ANALYSIS_WORKER_URL;
 const WORKER_KEY = process.env.ANALYSIS_WORKER_KEY;
+const REMOTE_WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_REMOTE_WORKER_TIMEOUT_MS || process.env.ANALYSIS_WORKER_TIMEOUT_MS || 25 * 1000);
+const LOCAL_WORKER_TIMEOUT_MS = Number(process.env.ANALYSIS_LOCAL_WORKER_TIMEOUT_MS || process.env.ANALYSIS_WORKER_TIMEOUT_MS || 15 * 60 * 1000);
 
 const reqHeader = (req, name) =>
   req.headers?.[name] || req.headers?.[name.toLowerCase()] || req.headers?.[name.toUpperCase()];
@@ -136,7 +137,7 @@ const runRemotePythonWorker = async (payload) => {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), REMOTE_WORKER_TIMEOUT_MS);
 
   try {
     const response = await fetch(WORKER_URL, {
@@ -210,7 +211,7 @@ const runLocalPythonWorkerCandidate = (candidate, payload) =>
       settled = true;
       child.kill('SIGTERM');
       rejectPromise(analysisError('Python analysis worker timed out.', 'ANALYSIS.WORKER_TIMEOUT', 504));
-    }, WORKER_TIMEOUT_MS);
+    }, LOCAL_WORKER_TIMEOUT_MS);
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');

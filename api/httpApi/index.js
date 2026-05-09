@@ -30,6 +30,17 @@ const error = (context, status, code, message, targetPath) => {
   });
 };
 
+const logError = (context, ...args) => {
+  if (typeof context?.log?.error === 'function') {
+    context.log.error(...args);
+    return;
+  }
+
+  if (typeof context?.log === 'function') {
+    context.log(...args);
+  }
+};
+
 const looksLikeHtml = (value) =>
   typeof value === 'string' && /<html[\s>]|<!doctype html|<body[\s>]|<h\d[\s>]/i.test(value);
 
@@ -608,13 +619,19 @@ const routes = {
       updatedAt: now
     };
 
-    await upsert('analysisRuns', analysisRun);
+    try {
+      await upsert('analysisRuns', analysisRun);
+    } catch (err) {
+      logError(context, 'Analysis run queue persistence failed', err);
+      error(context, err.status || err.statusCode || 503, err.code || 'ANALYSIS.RUN_QUEUE_FAILED', err.message || '分析ジョブの開始情報を保存できませんでした。', 'analysisRuns');
+      return;
+    }
 
     let analysisResult;
     try {
       analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
     } catch (err) {
-      context.log.error('Python analysis worker failed', err);
+      logError(context, 'Python analysis worker failed', err);
       analysisResult = failedAnalysisResult({
         analysisJobId,
         runId,
@@ -641,7 +658,7 @@ const routes = {
         updatedAt: now
       });
     } catch (err) {
-      context.log.error('Analysis result persistence failed', err);
+      logError(context, 'Analysis result persistence failed', err);
       analysisResult = failedAnalysisResult({
         analysisJobId,
         runId,
@@ -659,20 +676,36 @@ const routes = {
         dataset: resolvedDataset,
         config
       });
-      await upsert('analysisResults', {
-        ...storedResult,
-        updatedAt: now
-      });
+      try {
+        await upsert('analysisResults', {
+          ...storedResult,
+          updatedAt: now
+        });
+      } catch (fallbackErr) {
+        logError(context, 'Compact analysis result persistence failed', fallbackErr);
+        error(
+          context,
+          fallbackErr.status || fallbackErr.statusCode || 503,
+          fallbackErr.code || 'ANALYSIS.RESULT_PERSISTENCE_FAILED',
+          fallbackErr.message || '分析結果を保存できませんでした。',
+          'analysisResults'
+        );
+        return;
+      }
     }
 
-    await upsert('analysisRuns', {
-      ...analysisRun,
-      status: storedResult?.status || 'failed',
-      modelVersion: storedResult?.modelMetadata?.modelVersion,
-      featureGenerationVersion: 'python-worker-v1',
-      updatedAt: now,
-      completedAt: storedResult?.completedAt
-    });
+    try {
+      await upsert('analysisRuns', {
+        ...analysisRun,
+        status: storedResult?.status || 'failed',
+        modelVersion: storedResult?.modelMetadata?.modelVersion,
+        featureGenerationVersion: 'python-worker-v1',
+        updatedAt: now,
+        completedAt: storedResult?.completedAt
+      });
+    } catch (err) {
+      logError(context, 'Analysis run status persistence failed', err);
+    }
 
     json(context, 200, {
       analysisJobId,
@@ -935,7 +968,7 @@ module.exports = async function (context, req) {
 
     await handler(req, context);
   } catch (err) {
-    context.log.error(err);
+    logError(context, err);
     error(context, err.status || err.statusCode || 500, err.code || 'SERVER.ERROR', err.message || 'API request failed.');
   }
 };
