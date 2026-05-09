@@ -332,20 +332,28 @@ def column_label(mapped_column: dict[str, Any], column: dict[str, Any]) -> str:
     return fallback.replace("_", " ").strip()
 
 
-def feature_label(base_label: str, aggregation: str | None, window: dict[str, Any] | None = None, derived_kind: str | None = None) -> str:
+def feature_label(
+    base_label: str,
+    aggregation: str | None,
+    window: dict[str, Any] | None = None,
+    derived_kind: str | None = None,
+    category: str | None = None,
+) -> str:
     window_text = time_window_label(window)
     if derived_kind == "recency_days":
-        return f"{base_label} recency days{window_text}"
+        return f"{base_label}からの経過日数{window_text}"
     if derived_kind == "category_value_counts":
-        return f"{base_label} value counts{window_text}"
+        return f"{base_label}別回数{window_text}"
     aggregation_labels = {
-        "count": "count",
-        "distinct_count": "unique count",
-        "sum": "sum",
-        "avg": "average",
-        "min": "minimum",
-        "max": "maximum",
+        "count": "回数",
+        "distinct_count": "種類数",
+        "sum": "合計",
+        "avg": "平均",
+        "min": "最小",
+        "max": "最大",
     }
+    if aggregation == "latest" and category in {"behavior", "transaction", "engagement"}:
+        return f"直近の{base_label}{window_text}"
     if aggregation in {None, "none", "latest"}:
         return f"{base_label}{window_text}"
     return f"{base_label} {aggregation_labels.get(str(aggregation), str(aggregation))}{window_text}"
@@ -377,8 +385,8 @@ def time_window_label(window: dict[str, Any] | None) -> str:
         return ""
     value = window.get("value")
     unit = str(window.get("unit") or "day").lower()
-    suffix = "d" if unit == "day" else "w" if unit == "week" else "m"
-    return f" last {value}{suffix}"
+    unit_label = "日" if unit == "day" else "週" if unit == "week" else "か月"
+    return f" 直近{value}{unit_label}"
 
 
 def is_leakage_like_feature(
@@ -564,6 +572,7 @@ def build_autopilot_feature_descriptors(
         mapped_column = mapped_by_column.get(column.get("id")) or {}
         table = item["table"]
         table_mapping = table_mapping_by_id.get(table.get("id")) or {}
+        table_category = category_for_entity_role(table_mapping.get("entityRole"), table.get("name", ""))
         feature_key = autopilot_feature_key(column, aggregation, window, derived_kind)
         if feature_key in seen_keys or feature_key in blocked_keys or str(column.get("id")) in blocked_keys:
             return
@@ -580,7 +589,7 @@ def build_autopilot_feature_descriptors(
         base_label = column_label(mapped_column, column)
         generated.append({
             "featureKey": feature_key,
-            "label": feature_label(base_label, aggregation, window, derived_kind),
+            "label": feature_label(base_label, aggregation, window, derived_kind, table_category),
             "sourceColumnName": column.get("name"),
             "sourceColumnId": column.get("id"),
             "sourceTableId": table.get("id"),
@@ -590,7 +599,7 @@ def build_autopilot_feature_descriptors(
             "valueType": value_type,
             "valueLabels": None,
             "entityRole": table_mapping.get("entityRole"),
-            "category": category_for_entity_role(table_mapping.get("entityRole"), table.get("name", "")),
+            "category": table_category,
             "aggregation": aggregation,
             "timeWindow": window,
             "derivedKind": derived_kind,
@@ -750,6 +759,28 @@ def is_sequence_mining_feature(feature: dict[str, Any], event_time_columns_by_ta
     )
 
 
+def is_count_like_feature(feature: dict[str, Any]) -> bool:
+    return feature.get("aggregation") in {"count", "distinct_count"} or feature.get("derivedKind") == "category_value_count"
+
+
+def display_number(value: float) -> str:
+    if abs(value - round(value)) < 1e-9:
+        return f"{int(round(value)):,}"
+    return f"{round(value, 4):,}"
+
+
+def numeric_condition_label(feature: dict[str, Any], operator: str, value: float) -> str:
+    label = feature["label"]
+    if is_count_like_feature(feature):
+        count = max(0, int(round(value)))
+        if operator == "gte":
+            return f"{label} が {count} 回以上"
+        if operator == "lte":
+            return f"{label} が {count} 回以下"
+    suffix = "以下" if operator == "lte" else "以上"
+    return f"{label} が {display_number(value)} {suffix}"
+
+
 def aggregate_values(values: list[Any], feature: dict[str, Any], target_at: float | None = None) -> Any:
     present = []
     for item in values:
@@ -867,7 +898,7 @@ def derive_category_value_count_features(
             features.append({
                 **{key: value for key, value in template.items() if key not in {"featureKey", "label", "template"}},
                 "featureKey": feature_key,
-                "label": f"{template.get('label')} = {label} count",
+                "label": f"{template.get('label')}: {label}",
                 "valueType": "numeric",
                 "aggregation": "count",
                 "derivedKind": "category_value_count",
@@ -945,6 +976,14 @@ def derive_timed_transition_features(
         diagnostics["autoDerivedTransitionFeatureCount"] = diagnostics.get("autoDerivedTransitionFeatureCount", 0) + generated_count
 
 
+def same_numeric_measure(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_source = normalize_identifier(left.get("sourceColumnName"))
+    right_source = normalize_identifier(right.get("sourceColumnName"))
+    if not left_source or left_source != right_source:
+        return False
+    return left.get("sourceTableId") == right.get("sourceTableId")
+
+
 def derive_numeric_combination_features(
     rows: list[dict[str, Any]],
     features: list[dict[str, Any]],
@@ -977,6 +1016,10 @@ def derive_numeric_combination_features(
         for kind in ["ratio", "product"]:
             if generated_count >= max_generated_features:
                 break
+            if kind == "product":
+                continue
+            if kind == "ratio" and not same_numeric_measure(left, right):
+                continue
             left_kind = left.get("derivedKind")
             right_kind = right.get("derivedKind")
             left_aggregation = left.get("aggregation")
@@ -1009,10 +1052,10 @@ def derive_numeric_combination_features(
                     row.pop(feature_key, None)
                 existing_keys.discard(feature_key)
                 continue
-            operator_label = "ratio to" if kind == "ratio" else "x"
+            operator_label = "比率" if kind == "ratio" else "x"
             features.append({
                 "featureKey": feature_key,
-                "label": f"{left.get('label')} {operator_label} {right.get('label')}",
+                "label": f"{left.get('label')} / {right.get('label')} {operator_label}",
                 "sourceTableDisplayName": left.get("sourceTableDisplayName") or right.get("sourceTableDisplayName"),
                 "sourceColumnName": f"{left.get('sourceColumnName')}:{right.get('sourceColumnName')}",
                 "dataType": "float",
@@ -1208,8 +1251,16 @@ def analyze_numeric_feature(rows: list[dict[str, Any]], feature: dict[str, Any],
     threshold = percentile(values, 0.25 if direction == "negative" else 0.75)
     if threshold is None:
         return None
+    if is_count_like_feature(feature):
+        threshold = math.floor(threshold) if direction == "negative" else math.ceil(threshold)
+        if direction == "positive":
+            threshold = max(1, threshold)
+        else:
+            threshold = max(0, threshold)
 
     matched = [item for item in pairs if item["value"] <= threshold] if direction == "negative" else [item for item in pairs if item["value"] >= threshold]
+    if len(matched) < min_group_count:
+        return None
     matched_rate = sum(1 for item in matched if item["target"] == 1) / len(matched) if matched else 0
     delta = matched_rate - baseline_rate
     value = round(threshold, 4)
@@ -1228,7 +1279,7 @@ def analyze_numeric_feature(rows: list[dict[str, Any]], feature: dict[str, Any],
                 "featureKey": feature["featureKey"],
                 "operator": operator,
                 "value": value,
-                "label": f"{feature['label']} が {value} {'以下' if direction == 'negative' else '以上'}",
+                "label": numeric_condition_label(feature, operator, value),
             },
         },
     }
