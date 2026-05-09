@@ -68,6 +68,10 @@ const readPayload = async (response: Response): Promise<unknown> => {
     return null;
   }
 
+  if (contentType.includes('text/html') || /^\s*(<!doctype html|<html[\s>])/i.test(text)) {
+    return null;
+  }
+
   try {
     return JSON.parse(text);
   } catch {

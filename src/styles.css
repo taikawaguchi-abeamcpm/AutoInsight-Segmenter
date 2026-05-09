@@ -1273,6 +1273,47 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.saved-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-result-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(110px, 0.36fr)) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid #d9e3e7;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  text-align: left;
+}
+
+.saved-result-row:hover {
+  border-color: #1d7660;
+  background: #f8fcfa;
+}
+
+.saved-result-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.saved-result-row strong,
+.saved-result-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-result-row small {
+  color: #60737c;
+  font-size: 12px;
+}
+
 .pattern-list button {
   display: grid;
   gap: 8px;
@@ -1455,6 +1496,10 @@ textarea {
     grid-column: auto;
     grid-row: auto;
   }
+
+  .saved-result-row {
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(100px, auto));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1478,6 +1523,10 @@ textarea {
   .condition-row,
   .status-strip,
   .checklist-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-result-row {
     grid-template-columns: 1fr;
   }
 }

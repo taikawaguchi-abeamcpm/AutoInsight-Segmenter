@@ -6,6 +6,7 @@ import { type AppStep, Shell } from './components/common/Shell';
 import { DatasetSelectionScreen } from './components/dataset/DatasetSelectionScreen';
 import { MappingScreen } from './components/mapping/MappingScreen';
 import { ResultsVisualizationScreen } from './components/results/ResultsVisualizationScreen';
+import { SavedResultsScreen } from './components/results/SavedResultsScreen';
 import { SegmentCreationScreen } from './components/segment/SegmentCreationScreen';
 import type { SelectedDatasetContext } from './types/dataset';
 import type { FabricDataset, SemanticMappingDocument } from './types/mapping';
@@ -20,16 +21,13 @@ export default function App() {
   const [segmentContext, setSegmentContext] = useState<SelectedSegmentContext | null>(null);
 
   const unlockedSteps = useMemo(() => {
-    const steps: AppStep[] = ['admin', 'dataset'];
+    const steps: AppStep[] = ['admin', 'dataset', 'results'];
 
     if (datasetContext) {
       steps.push('mapping');
     }
     if (mapping) {
       steps.push('analysis');
-    }
-    if (analysisJobId) {
-      steps.push('results');
     }
     if (segmentContext) {
       steps.push('segment');
@@ -96,11 +94,32 @@ export default function App() {
       );
     }
 
-    if (currentStep === 'results' && analysisJobId) {
+    if (currentStep === 'results') {
+      if (!analysisJobId) {
+        return (
+          <SavedResultsScreen
+            onBackToDataset={() => setCurrentStep('dataset')}
+            onOpenResult={(nextAnalysisJobId) => {
+              setAnalysisJobId(nextAnalysisJobId);
+              setSegmentContext(null);
+              setCurrentStep('results');
+            }}
+          />
+        );
+      }
+
       return (
         <ResultsVisualizationScreen
           analysisJobId={analysisJobId}
-          onBack={() => setCurrentStep('analysis')}
+          onBack={() => {
+            if (mapping && fabricDataset) {
+              setCurrentStep('analysis');
+              return;
+            }
+
+            setAnalysisJobId(null);
+            setCurrentStep('results');
+          }}
           onSegmentsSelected={(context) => {
             setSegmentContext(context);
             setCurrentStep('segment');

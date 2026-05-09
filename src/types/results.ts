@@ -21,6 +21,19 @@ export interface AnalysisResultDocument {
   modelMetadata?: AnalysisModelMetadata;
 }
 
+export interface SavedAnalysisResultListItem {
+  analysisJobId: string;
+  datasetId: string;
+  mappingDocumentId: string;
+  mode: 'custom' | 'autopilot';
+  status: AnalysisJobStatus;
+  message: string;
+  createdAt: string;
+  completedAt?: string;
+  updatedAt?: string;
+  summary: AnalysisResultSummary;
+}
+
 export interface AnalysisResultSummary {
   analyzedRowCount: number;
   topFeatureCount: number;

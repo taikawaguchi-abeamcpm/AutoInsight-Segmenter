@@ -798,6 +798,38 @@ module.exports = async function (context, req) {
       return;
     }
 
+    if (req.method.toUpperCase() === 'GET' && route === 'analysis-results') {
+      const { queryAll } = getStore();
+      const records = await queryAll('analysisResults', {
+        query: `
+          SELECT TOP 100
+            c.analysisJobId,
+            c.datasetId,
+            c.mappingDocumentId,
+            c.mode,
+            c.status,
+            c.message,
+            c.createdAt,
+            c.completedAt,
+            c.updatedAt,
+            c.summary
+          FROM c
+          ORDER BY c.updatedAt DESC
+        `
+      });
+      const seen = new Set();
+      const latestRecords = records.filter((record) => {
+        if (!record.analysisJobId || seen.has(record.analysisJobId)) {
+          return false;
+        }
+        seen.add(record.analysisJobId);
+        return true;
+      });
+
+      json(context, 200, latestRecords);
+      return;
+    }
+
     const resultMatch = route.match(/^analysis-results\/([^/]+)$/);
     if (req.method.toUpperCase() === 'GET' && resultMatch) {
       const { queryAll } = getStore();
