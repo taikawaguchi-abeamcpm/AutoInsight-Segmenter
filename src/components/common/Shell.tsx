@@ -1,5 +1,7 @@
-import { Activity, Database, GitBranch, LineChart, PlayCircle, Settings, Users } from 'lucide-react';
+import { Activity, Database, GitBranch, LineChart, LogOut, PlayCircle, Settings, UserRound, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { signOut } from '../../services/auth/authApi';
+import { useAuthSession } from '../auth/AuthGate';
 
 export type AppStep = 'admin' | 'dataset' | 'mapping' | 'analysis' | 'results' | 'segment';
 
@@ -22,40 +24,57 @@ export const Shell = ({
   unlockedSteps: AppStep[];
   onNavigate: (step: AppStep) => void;
   children: ReactNode;
-}) => (
-  <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand">
-        <Activity aria-hidden="true" />
-        <div>
-          <strong>AutoInsight</strong>
-          <span>Segmenter</span>
-        </div>
-      </div>
-      <nav className="step-nav" aria-label="ワークフロー">
-        {steps.map((step, index) => {
-          const Icon = step.icon;
-          const disabled = !unlockedSteps.includes(step.id);
-          const active = step.id === currentStep;
-          const className = [active ? 'active' : '', step.id === 'admin' ? 'admin-step' : ''].filter(Boolean).join(' ');
+}) => {
+  const session = useAuthSession();
+  const tenantName = session?.user.memberships[0]?.tenantName;
 
-          return (
-            <button
-              key={step.id}
-              type="button"
-              className={className}
-              aria-current={active ? 'step' : undefined}
-              disabled={disabled}
-              onClick={() => onNavigate(step.id)}
-            >
-              {step.id === 'admin' ? null : <span>{index}</span>}
-              <Icon aria-hidden="true" />
-              {step.label}
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <Activity aria-hidden="true" />
+          <div>
+            <strong>AutoInsight</strong>
+            <span>Segmenter</span>
+          </div>
+        </div>
+        <nav className="step-nav" aria-label="ワークフロー">
+          {steps.map((step, index) => {
+            const Icon = step.icon;
+            const disabled = !unlockedSteps.includes(step.id);
+            const active = step.id === currentStep;
+            const className = [active ? 'active' : '', step.id === 'admin' ? 'admin-step' : ''].filter(Boolean).join(' ');
+
+            return (
+              <button
+                key={step.id}
+                type="button"
+                className={className}
+                aria-current={active ? 'step' : undefined}
+                disabled={disabled}
+                onClick={() => onNavigate(step.id)}
+              >
+                {step.id === 'admin' ? null : <span>{index}</span>}
+                <Icon aria-hidden="true" />
+                {step.label}
+              </button>
+            );
+          })}
+        </nav>
+        {session ? (
+          <div className="account-bar">
+            <div>
+              <UserRound aria-hidden="true" />
+              <span>{session.user.displayName}</span>
+              {tenantName ? <small>{tenantName}</small> : null}
+            </div>
+            <button type="button" onClick={signOut} title="ログアウト" aria-label="ログアウト">
+              <LogOut aria-hidden="true" />
             </button>
-          );
-        })}
-      </nav>
-    </aside>
-    <main className="main-content">{children}</main>
-  </div>
-);
+          </div>
+        ) : null}
+      </aside>
+      <main className="main-content">{children}</main>
+    </div>
+  );
+};

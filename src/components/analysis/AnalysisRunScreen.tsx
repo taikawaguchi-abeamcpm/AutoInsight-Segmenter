@@ -72,6 +72,7 @@ export const AnalysisRunScreen = ({
   const [config, setConfig] = useState<AnalysisRunConfig | null>(null);
   const [validation, setValidation] = useState<AnalysisRunValidation | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [analysisRowsProcessed, setAnalysisRowsProcessed] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
@@ -128,6 +129,27 @@ export const AnalysisRunScreen = ({
       controller.abort();
     };
   }, [config, summary]);
+
+  useEffect(() => {
+    if (!submitting || !summary) {
+      return;
+    }
+
+    const totalRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
+    if (totalRows === 0) {
+      setAnalysisRowsProcessed(0);
+      return;
+    }
+
+    const startedAt = performance.now();
+    const displayDurationMs = Math.min((validation?.estimatedDurationSeconds ?? 30) * 1000, 15000);
+    const intervalId = window.setInterval(() => {
+      const progressRatio = Math.min((performance.now() - startedAt) / displayDurationMs, 0.92);
+      setAnalysisRowsProcessed(Math.max(1, Math.floor(totalRows * progressRatio)));
+    }, 180);
+
+    return () => window.clearInterval(intervalId);
+  }, [submitting, summary, validation?.estimatedDurationSeconds]);
 
   const enabledFeatureCount = useMemo(() => {
     if (!summary || !config) {
@@ -191,8 +213,12 @@ export const AnalysisRunScreen = ({
     }
 
     setSubmitting(true);
+    setAnalysisRowsProcessed(0);
     try {
+      const totalRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
       const started = await analysisApi.start(mapping, config, {}, fabricDataset);
+      setAnalysisRowsProcessed(totalRows);
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
       onStarted(started.analysisJobId);
     } finally {
       setSubmitting(false);
@@ -223,6 +249,30 @@ export const AnalysisRunScreen = ({
   }
 
   const customConfig = config.mode === 'custom' ? config : null;
+  const totalAnalysisRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
+  const progressPercent = totalAnalysisRows > 0 ? Math.round((analysisRowsProcessed / totalAnalysisRows) * 100) : 0;
+
+  if (submitting) {
+    return (
+      <div className="screen analysis-progress-screen">
+        <Card className="status-strip analysis-progress-strip">
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label="Analysis progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+          >
+            <span style={{ width: `${progressPercent}%` }} />
+          </div>
+          <strong>
+            {formatNumber(analysisRowsProcessed)}/{formatNumber(totalAnalysisRows)}行のデータを分析しています
+          </strong>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="screen">

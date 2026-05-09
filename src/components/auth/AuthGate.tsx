@@ -1,10 +1,14 @@
-import { LogIn, LogOut, ShieldCheck, UserRound } from 'lucide-react';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { LogIn, ShieldCheck } from 'lucide-react';
+import { createContext, type FormEvent, type ReactNode, useContext, useEffect, useState } from 'react';
 import { completeOnboarding, getAuthSession, signIn, signOut } from '../../services/auth/authApi';
 import type { AuthSession } from '../../types/auth';
 import { Button, Card, Field } from '../common/ui';
 
 type AuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error';
+
+const AuthSessionContext = createContext<AuthSession | null>(null);
+
+export const useAuthSession = () => useContext(AuthSessionContext);
 
 export const AuthGate = ({ children }: { children: ReactNode }) => {
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -85,21 +89,7 @@ export const AuthGate = ({ children }: { children: ReactNode }) => {
     );
   }
 
-  return (
-    <div>
-      <div className="account-bar">
-        <div>
-          <UserRound aria-hidden="true" />
-          <span>{session.user.displayName}</span>
-          {session.user.memberships[0]?.tenantName ? <small>{session.user.memberships[0].tenantName}</small> : null}
-        </div>
-        <button type="button" onClick={signOut} title="ログアウト" aria-label="ログアウト">
-          <LogOut aria-hidden="true" />
-        </button>
-      </div>
-      {children}
-    </div>
-  );
+  return <AuthSessionContext.Provider value={session}>{children}</AuthSessionContext.Provider>;
 };
 
 const AuthLayout = ({ children }: { children: ReactNode }) => <main className="auth-layout">{children}</main>;
