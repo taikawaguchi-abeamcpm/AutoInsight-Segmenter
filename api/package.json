@@ -4,7 +4,6 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "func start",
     "test": "node scripts/check-syntax.js"
   },
   "dependencies": {

@@ -39,24 +39,6 @@ const decodeStaticWebAppPrincipal = (req) => {
   }
 };
 
-const devPrincipal = () => {
-  if (process.env.AUTH_DEV_USER_ENABLED !== 'true') {
-    return null;
-  }
-
-  const email = process.env.AUTH_DEV_USER_EMAIL || 'developer@example.local';
-  return {
-    identityProvider: process.env.AUTH_DEV_IDENTITY_PROVIDER || 'local',
-    userId: process.env.AUTH_DEV_USER_ID || `local-${makeHash(email)}`,
-    userDetails: email,
-    userRoles: ['authenticated'],
-    claims: [
-      { typ: 'email', val: email },
-      { typ: 'name', val: process.env.AUTH_DEV_USER_NAME || 'Local Developer' }
-    ]
-  };
-};
-
 const normalizePrincipal = (principal) => {
   if (!principal) {
     return null;
@@ -90,7 +72,7 @@ const normalizePrincipal = (principal) => {
   };
 };
 
-const resolvePrincipal = (req) => normalizePrincipal(decodeStaticWebAppPrincipal(req) || devPrincipal());
+const resolvePrincipal = (req) => normalizePrincipal(decodeStaticWebAppPrincipal(req));
 
 const requirePrincipal = (req) => {
   const principal = resolvePrincipal(req);

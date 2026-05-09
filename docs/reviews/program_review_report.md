@@ -22,8 +22,7 @@
   - 現在の `vite@^5.4.11` は `npm audit` で `esbuild` の dev server 脆弱性に該当する。
   - 開発環境で同一ネットワーク上の第三者から dev server に到達できる構成になりやすい。
 - 修正案:
-  - 通常の `npm run dev` は localhost のみにする。
-  - 外部公開が必要な場合だけ `dev:host` など別 script に分ける。
+  - ローカル dev server scripts を削除し、GitHub Actions によるビルド・デプロイに一本化する。
   - Vite を脆弱性修正済み系列へ更新する。破壊的変更があるため、更新後に `npm run build` と画面確認を行う。
 
 ### P1: Fabric API 呼び出しにキャンセル・競合制御がなく、古いレスポンスで画面が上書きされる

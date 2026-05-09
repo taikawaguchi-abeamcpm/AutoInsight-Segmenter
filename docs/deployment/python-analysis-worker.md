@@ -90,7 +90,7 @@ ENABLE_ORYX_BUILD=true
 
 Do not add them back for the Flex Consumption Function App. The deployment action handles the Flex deployment path itself.
 
-The workflow also does not pass `remote-build: true` to `Azure/functions-action@v1` for this app. Dependencies are installed locally into:
+The workflow also does not pass `remote-build: true` to `Azure/functions-action@v1` for this app. Dependencies are installed into the packaged Function App directory:
 
 ```text
 analysis-function/.python_packages/lib/site-packages
@@ -167,8 +167,6 @@ ANALYSIS_WORKER_URL=https://<python-function-app>.azurewebsites.net/api/analysis
 ANALYSIS_WORKER_KEY=<function-key>
 ```
 
-For local development, you can omit `ANALYSIS_WORKER_URL`; the Node API will run `analysis-worker/run_analysis.py` directly with the local Python executable.
-
 For the current `autoinsight` Function App in Japan East, the URL should use the app's default domain:
 
 ```text
@@ -222,11 +220,10 @@ For large Fabric schemas, the browser sends only the columns needed by the selec
 
 Deployed analysis starts asynchronously. `/api/analysis/start` stores a queued result, writes the full worker payload to the analysis run record, and enqueues a small message to the Python Function App. The queue worker fetches the payload through a per-job tokenized callback URL, executes the Python analysis, and posts the completed result back to `/api/analysis/callback`.
 
-The deployed `/api/analysis/start` path only waits for queue acceptance. Local development without `ANALYSIS_WORKER_URL` still runs the worker synchronously, so local worker timeouts remain configurable:
+The `/api/analysis/start` path only waits for queue acceptance. Configure these production limits through Azure app settings:
 
 ```text
 ANALYSIS_WORKER_ENQUEUE_TIMEOUT_MS=15000
-ANALYSIS_LOCAL_WORKER_TIMEOUT_MS=900000
 FABRIC_ANALYSIS_PAGE_SIZE=500
 FABRIC_ANALYSIS_MAX_ROWS=5000
 ```

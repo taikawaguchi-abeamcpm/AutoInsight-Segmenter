@@ -1,6 +1,4 @@
-import json
 import math
-import sys
 import time
 from itertools import combinations
 from typing import Any
@@ -1088,13 +1086,3 @@ def build_customer_list_result(payload: dict[str, Any]) -> dict[str, Any]:
         "segments": hydrated_segments,
         "analysisRows": build_analysis_rows(rows),
     }
-
-
-def main() -> None:
-    payload = json.loads(sys.stdin.read())
-    result = build_customer_list_result(payload) if payload.get("operation") == "customerList" else build_real_analysis_result(payload)
-    json.dump(result, sys.stdout, ensure_ascii=False, separators=(",", ":"))
-
-
-if __name__ == "__main__":
-    main()

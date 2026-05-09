@@ -1,7 +1,7 @@
 const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
 const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
 const { makeHash, nowIso } = require('../src/http');
-const { buildCustomerListResult, buildRealAnalysisResult, enqueueRemoteAnalysisJob, getAnalysisWorkerStatus } = require('../src/analysisEngine');
+const { buildCustomerListResult, enqueueRemoteAnalysisJob, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 const { completeOnboarding, getOrCreateUserSession } = require('../src/auth');
 const { error, json, logError, publicOrigin, readBody, readHeader } = require('./httpUtils');
@@ -577,110 +577,13 @@ const routes = {
       updatedAt: now
     };
 
-    if (process.env.ANALYSIS_WORKER_URL) {
-      if (!callbackUrl || !payloadUrl) {
-        error(context, 500, 'ANALYSIS.CALLBACK_URL_UNAVAILABLE', 'Analysis callback URL could not be built.');
-        return;
-      }
-
-      const queuedResult = normalizeAnalysisResultForStorage({
-        analysisResult: queuedAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config, now }),
-        analysisJobId,
-        runId,
-        mapping: resolvedMapping,
-        dataset: resolvedDataset,
-        config
-      });
-
-      try {
-        await upsert('analysisRuns', {
-          ...analysisRun,
-          callbackTokenHash: hashCallbackToken(token),
-          callbackUrl,
-          payloadUrl,
-          workerPayload,
-          asyncQueuedAt: now
-        });
-        await upsert('analysisResults', {
-          ...queuedResult,
-          updatedAt: now
-        });
-        await enqueueRemoteAnalysisJob({
-          analysisJobId,
-          payloadUrl,
-          callbackUrl,
-          token,
-          queuedAt: now
-        });
-      } catch (err) {
-        logError(context, 'Analysis async enqueue failed', err);
-        const analysisResult = failedAnalysisResult({
-          analysisJobId,
-          runId,
-          mapping: resolvedMapping,
-          dataset: resolvedDataset,
-          config,
-          message: err.message || 'Analysis async enqueue failed.',
-          detail: err.code ? `${err.code}${err.status ? ` (${err.status})` : ''}` : undefined
-        });
-        const failedResult = normalizeAnalysisResultForStorage({
-          analysisResult,
-          analysisJobId,
-          runId,
-          mapping: resolvedMapping,
-          dataset: resolvedDataset,
-          config
-        });
-        await upsert('analysisResults', {
-          ...failedResult,
-          updatedAt: now
-        });
-        await upsert('analysisRuns', {
-          ...analysisRun,
-          status: 'failed',
-          updatedAt: now,
-          completedAt: analysisResult.completedAt
-        });
-        error(context, err.status || err.statusCode || 502, err.code || 'ANALYSIS.ENQUEUE_FAILED', err.message || 'Analysis job could not be queued.');
-        return;
-      }
-
-      json(context, 202, {
-        analysisJobId,
-        runId,
-        status: 'queued',
-        startedAt: now,
-        estimatedDurationSeconds
-      });
+    if (!callbackUrl || !payloadUrl) {
+      error(context, 500, 'ANALYSIS.CALLBACK_URL_UNAVAILABLE', 'Analysis callback URL could not be built.');
       return;
     }
 
-    try {
-      await upsert('analysisRuns', analysisRun);
-    } catch (err) {
-      logError(context, 'Analysis run queue persistence failed', err);
-      error(context, err.status || err.statusCode || 503, err.code || 'ANALYSIS.RUN_QUEUE_FAILED', err.message || '分析ジョブの開始情報を保存できませんでした。', 'analysisRuns');
-      return;
-    }
-
-    let analysisResult;
-    try {
-      analysisResult = await buildRealAnalysisResult({ connection: analysisConnection, req, analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config });
-    } catch (err) {
-      logError(context, 'Python analysis worker failed', err);
-      analysisResult = failedAnalysisResult({
-        analysisJobId,
-        runId,
-        mapping: resolvedMapping,
-        dataset: resolvedDataset,
-        config,
-        message: err.message || 'Python analysis worker failed.',
-        detail: err.code ? `${err.code}${err.status ? ` (${err.status})` : ''}` : undefined
-      });
-    }
-
-    let storedResult = normalizeAnalysisResultForStorage({
-      analysisResult,
+    const queuedResult = normalizeAnalysisResultForStorage({
+      analysisResult: queuedAnalysisResult({ analysisJobId, runId, mapping: resolvedMapping, dataset: resolvedDataset, config, now }),
       analysisJobId,
       runId,
       mapping: resolvedMapping,
@@ -689,22 +592,37 @@ const routes = {
     });
 
     try {
+      await upsert('analysisRuns', {
+        ...analysisRun,
+        callbackTokenHash: hashCallbackToken(token),
+        callbackUrl,
+        payloadUrl,
+        workerPayload,
+        asyncQueuedAt: now
+      });
       await upsert('analysisResults', {
-        ...storedResult,
+        ...queuedResult,
         updatedAt: now
       });
+      await enqueueRemoteAnalysisJob({
+        analysisJobId,
+        payloadUrl,
+        callbackUrl,
+        token,
+        queuedAt: now
+      });
     } catch (err) {
-      logError(context, 'Analysis result persistence failed', err);
-      analysisResult = failedAnalysisResult({
+      logError(context, 'Analysis async enqueue failed', err);
+      const analysisResult = failedAnalysisResult({
         analysisJobId,
         runId,
         mapping: resolvedMapping,
         dataset: resolvedDataset,
         config,
-        message: 'Analysis completed, but the result could not be saved. The stored result was reduced to failure diagnostics.',
-        detail: err.message || 'Cosmos analysis result persistence failed.'
+        message: err.message || 'Analysis async enqueue failed.',
+        detail: err.code ? `${err.code}${err.status ? ` (${err.status})` : ''}` : undefined
       });
-      storedResult = normalizeAnalysisResultForStorage({
+      const failedResult = normalizeAnalysisResultForStorage({
         analysisResult,
         analysisJobId,
         runId,
@@ -712,44 +630,28 @@ const routes = {
         dataset: resolvedDataset,
         config
       });
-      try {
-        await upsert('analysisResults', {
-          ...storedResult,
-          updatedAt: now
-        });
-      } catch (fallbackErr) {
-        logError(context, 'Compact analysis result persistence failed', fallbackErr);
-        error(
-          context,
-          fallbackErr.status || fallbackErr.statusCode || 503,
-          fallbackErr.code || 'ANALYSIS.RESULT_PERSISTENCE_FAILED',
-          fallbackErr.message || '分析結果を保存できませんでした。',
-          'analysisResults'
-        );
-        return;
-      }
-    }
-
-    try {
+      await upsert('analysisResults', {
+        ...failedResult,
+        updatedAt: now
+      });
       await upsert('analysisRuns', {
         ...analysisRun,
-        status: storedResult?.status || 'failed',
-        modelVersion: storedResult?.modelMetadata?.modelVersion,
-        featureGenerationVersion: 'python-worker-v1',
+        status: 'failed',
         updatedAt: now,
-        completedAt: storedResult?.completedAt
+        completedAt: analysisResult.completedAt
       });
-    } catch (err) {
-      logError(context, 'Analysis run status persistence failed', err);
+      error(context, err.status || err.statusCode || 502, err.code || 'ANALYSIS.ENQUEUE_FAILED', err.message || 'Analysis job could not be queued.');
+      return;
     }
 
-    json(context, 200, {
+    json(context, 202, {
       analysisJobId,
       runId,
-      status: storedResult?.status || 'failed',
+      status: 'queued',
       startedAt: now,
       estimatedDurationSeconds
     });
+    return;
   },
 
   'POST analysis/bootstrap': async (req, context) => {

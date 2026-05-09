@@ -71,22 +71,6 @@ auditLogs
 
 Each user is keyed from the identity provider and stable External ID subject. Application roles are stored in `memberships`; do not rely on identity provider claims alone for data authorization.
 
-## Local development
+## Development Policy
 
-For local API work, copy `api/local.settings.sample.json` to `api/local.settings.json`. The sample enables a local development principal:
-
-```text
-AUTH_DEV_USER_ENABLED=true
-AUTH_DEV_USER_EMAIL=developer@example.local
-AUTH_DEV_USER_NAME=Local Developer
-```
-
-Disable `AUTH_DEV_USER_ENABLED` outside local development.
-
-For Vite-only UI development without Static Web Apps auth or the Functions API, start Vite with:
-
-```text
-VITE_AUTH_DEV_MODE=true
-```
-
-Use this only for UI development. API authorization is not exercised in this mode.
+Local authentication bypass and local Functions settings are not part of the supported repository workflow. Configure authentication through Azure Static Web Apps settings and validate changes through GitHub Actions deployments.

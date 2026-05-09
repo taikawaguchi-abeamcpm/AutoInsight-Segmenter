@@ -7,10 +7,10 @@ AutoInsight Segmenter is a React frontend with Azure Static Web Apps API routes 
 - `src/`: React + TypeScript frontend screens, services, hooks, and types.
 - `api/httpApi/`: Azure Functions HTTP trigger entry point.
 - `api/src/`: Node API modules for auth, Fabric access, analysis orchestration, storage, and semantic mapping.
-- `analysis-worker/`: Python analysis engine and local runner.
+- `analysis-worker/`: Python analysis engine.
 - `analysis-function/`: Azure Function App wrapper used to deploy the Python worker.
 - `docs/`: design, deployment, and review documents.
-- `scripts/`: local maintenance and deployment scripts.
+- `scripts/`: repository maintenance scripts.
 
 Generated output, dependency folders, logs, build outputs, screenshots, and Python bytecode are intentionally ignored by Git. Keep verification images under `review-artifacts/` or another external artifact location, not in source control.
 
@@ -23,17 +23,8 @@ npm run build
 npm --prefix api test
 ```
 
-For local frontend development:
-
-```powershell
-npm run dev
-```
-
-For the Static Web Apps API package:
-
-```powershell
-npm --prefix api start
-```
+Production deployment is handled by GitHub Actions after changes are pushed to `main`.
+The repository does not keep local development server or local deployment wrapper scripts.
 
 ## Maintenance
 

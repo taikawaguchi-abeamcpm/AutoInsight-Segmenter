@@ -7,7 +7,7 @@ patterns, and returns an `AnalysisResultDocument`-compatible JSON payload.
 
 ## Runtime Contract
 
-Input is read from stdin as JSON:
+The deployed Azure Functions wrapper passes request JSON to the worker functions:
 
 ```json
 {
@@ -21,8 +21,8 @@ Input is read from stdin as JSON:
 }
 ```
 
-Output is written to stdout as JSON. Any stderr output with a non-zero exit code
-is treated as an API failure by `api/src/analysisEngine.js`.
+The worker returns an `AnalysisResultDocument`-compatible dictionary to the
+Function App wrapper, which serializes it as JSON for the Node API.
 
 ## Responsibilities
 
@@ -35,10 +35,8 @@ is treated as an API failure by `api/src/analysisEngine.js`.
 
 ## Configuration
 
-- `PYTHON_EXECUTABLE`: optional path used by the Node adapter
 - `ANALYSIS_REMOTE_WORKER_TIMEOUT_MS`: Node API timeout for the deployed Python worker, default 25 seconds so `/api/analysis/start` can return before the Static Web Apps synchronous backend call is cut off
-- `ANALYSIS_LOCAL_WORKER_TIMEOUT_MS`: local Python worker timeout, default 15 minutes
-- `ANALYSIS_WORKER_TIMEOUT_MS`: legacy override used by both remote and local adapters when the more specific timeout variables are not set
+- `ANALYSIS_WORKER_TIMEOUT_MS`: legacy override for the Node API remote worker timeout
 - `FABRIC_GRAPHQL_TIMEOUT_MS`: GraphQL request timeout
 - `FABRIC_ANALYSIS_PAGE_SIZE`: GraphQL page size, default 500
 - `FABRIC_ANALYSIS_MAX_ROWS`: maximum rows per table fetch, default 5,000 for the synchronous experiment path

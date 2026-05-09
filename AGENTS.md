@@ -4,7 +4,7 @@ This repository is intentionally split into frontend, API, Python analysis, and 
 
 ## Read First
 
-1. `README.md` for the current repository map and commands.
+1. `README.md` for the current repository map and CI-oriented commands.
 2. The narrow source area you are changing.
 3. The matching files under `docs/design/` only when the task depends on product or workflow behavior.
 
@@ -31,10 +31,17 @@ Do not inspect or edit these unless the task explicitly asks for artifacts or ge
 - `*.tsbuildinfo`
 - generated `vite.config.js` and `vite.config.d.ts`
 
+## Local Runtime Policy
+
+- Do not add or restore local development server, local preview, or local deploy wrapper scripts.
+- Deployment is handled by GitHub Actions after `main` is pushed.
+- Keep `node_modules/` and `api/node_modules/` out of the working tree unless a command in the current task explicitly requires reinstalling dependencies for verification.
+- If dependencies are installed for verification, remove generated dependency and build output directories before finishing.
+
 ## Change Discipline
 
 - Prefer small, localized changes over broad refactors.
 - Do not add generated files or verification screenshots to Git.
 - Keep large modules moving toward smaller route, service, hook, or algorithm modules.
-- When touching backend API behavior, run `npm run build` and `npm --prefix api test` when practical.
+- When touching backend API behavior, run `npm run build` and `npm --prefix api test` when practical; reinstall dependencies only when needed for that verification.
 - When touching the Python worker, run the relevant Python syntax or worker checks before finishing.

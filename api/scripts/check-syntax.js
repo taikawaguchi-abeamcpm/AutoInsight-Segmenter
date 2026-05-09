@@ -25,7 +25,6 @@ for (const file of files) {
 }
 
 const pythonFiles = [
-  join(__dirname, '..', '..', 'analysis-worker', 'run_analysis.py'),
   join(__dirname, '..', '..', 'analysis-worker', 'autoinsight_analysis', 'worker.py'),
   join(__dirname, '..', '..', 'analysis-function', 'analysis_health', '__init__.py'),
   join(__dirname, '..', '..', 'analysis-function', 'analysis_run', '__init__.py')
