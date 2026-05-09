@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { isAbortError, isApiError } from '../../services/client';
 import { resultsApi } from '../../services/results/resultsApi';
 import type { AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation, SelectedSegmentContext } from '../../types/results';
-import { Badge, Button, Card, EmptyState, Metric, formatNumber, formatPercent } from '../common/ui';
+import { Badge, Button, Card, EmptyState, formatNumber, formatPercent } from '../common/ui';
 
 const operatorLabel: Record<string, string> = {
   eq: 'が',
@@ -45,25 +45,29 @@ const conditionSummary = (conditions: { label: string; operator: string; value: 
     .map((condition) => `${conditionFeatureLabel(condition.label)} ${operatorLabel[condition.operator] ?? condition.operator} ${conditionValueLabel(condition)}`)
     .join(' かつ ');
 
-const patternActionText = (conversionDelta?: number, lift?: number) => {
-  const parts = [
-    typeof conversionDelta === 'number' ? `平均との差が ${formatPercent(conversionDelta)}` : null,
-    typeof lift === 'number' ? `全体の ${lift.toFixed(2)} 倍` : null
-  ].filter(Boolean);
-
-  if (parts.length === 0) {
-    return '条件に合う顧客を施策候補として確認できます。';
-  }
-
-  return `${parts.join('、')}のため、優先して施策対象にする価値があります。`;
-};
-
 type OutcomeGroup = {
   id: string;
   segment?: SegmentRecommendation;
   pattern?: GoldenPatternResult;
   conditions: PatternCondition[];
 };
+
+const outcomeGroupName = (group: OutcomeGroup) =>
+  stripDecimalSuffixes(group.segment?.name || group.pattern?.title || conditionSummary(group.conditions));
+
+const outcomeEffectText = (pattern?: GoldenPatternResult) => {
+  const parts = [
+    typeof pattern?.conversionDelta === 'number' ? `平均との差 ${formatPercent(pattern.conversionDelta)}` : null,
+    typeof pattern?.lift === 'number' ? `全体比 ${pattern.lift.toFixed(2)} 倍` : null
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' / ') : '効果見込みを確認中';
+};
+
+const recommendedActionText = (group: OutcomeGroup) =>
+  group.pattern?.recommendedAction ||
+  group.segment?.useCase ||
+  'この条件で対象顧客を抽出し、既存施策の配信対象として確認します。';
 
 export const ResultsVisualizationScreen = ({
   analysisJobId,
@@ -221,14 +225,6 @@ export const ResultsVisualizationScreen = ({
 
       {actionMessage ? <p className="notice success">{actionMessage}</p> : null}
 
-      <div className="kpi-strip">
-        <Metric label="分析対象件数" value={formatNumber(result.summary.analyzedRowCount)} />
-        <Metric label="重要特徴量" value={result.summary.topFeatureCount} />
-        <Metric label="有効パターン" value={result.summary.validPatternCount} />
-        <Metric label="推奨セグメント" value={result.summary.recommendedSegmentCount} />
-        <Metric label="ベースライン比改善" value={formatPercent(result.summary.improvementRate)} />
-      </div>
-
       <Card>
         <div className="panel-heading">
           <h2>成果につながる顧客群</h2>
@@ -240,21 +236,46 @@ export const ResultsVisualizationScreen = ({
             const selected = group.segment ? selectedSegmentIds.includes(group.segment.id) : false;
             return (
               <label className={selected ? 'outcome-group-card selected' : 'outcome-group-card'} key={group.id}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  disabled={!group.segment}
-                  onChange={() => group.segment && toggleSegment(group.segment.id)}
-                  aria-label={`${conditionSummary(group.conditions)}を選択`}
-                />
-                <span className="insight-rank">候補 {index + 1}</span>
-                <strong>{conditionSummary(group.conditions)}</strong>
-                <p>{patternActionText(group.pattern?.conversionDelta, group.pattern?.lift)}</p>
-                <div className="outcome-group-metrics">
-                  {group.pattern ? <Badge tone="success">成約率差 {formatPercent(group.pattern.conversionDelta)}</Badge> : null}
-                  {group.pattern?.lift ? <Badge tone="info">全体比 {group.pattern.lift.toFixed(2)} 倍</Badge> : null}
-                  {group.segment ? <Badge tone="neutral">{formatNumber(group.segment.estimatedAudienceSize)} 人</Badge> : null}
-                  {group.segment ? <Badge tone="info">優先度 {group.segment.priorityScore}</Badge> : null}
+                <div className="outcome-group-main">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={!group.segment}
+                    onChange={() => group.segment && toggleSegment(group.segment.id)}
+                    aria-label={`${outcomeGroupName(group)}を選択`}
+                  />
+                  <div className="outcome-group-copy">
+                    <span className="insight-rank">候補 {index + 1}</span>
+                    <strong>{outcomeGroupName(group)}</strong>
+                    {group.segment?.description || group.pattern?.description ? (
+                      <p>{group.segment?.description || group.pattern?.description}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="outcome-condition-list" aria-label="条件">
+                  {group.conditions.map((condition) => (
+                    <span className="chip strong" key={`${group.id}-${condition.featureKey}-${condition.label}`}>
+                      {conditionSummary([condition])}
+                    </span>
+                  ))}
+                </div>
+                <div className="outcome-decision-grid">
+                  <div>
+                    <span>期待効果</span>
+                    <strong>{outcomeEffectText(group.pattern)}</strong>
+                  </div>
+                  <div>
+                    <span>対象規模</span>
+                    <strong>{group.segment ? `${formatNumber(group.segment.estimatedAudienceSize)} 人` : '-'}</strong>
+                  </div>
+                  <div>
+                    <span>優先度</span>
+                    <strong>{group.segment?.priorityScore ?? '-'}</strong>
+                  </div>
+                </div>
+                <div className="outcome-next-action">
+                  <span>次にやること</span>
+                  <strong>{recommendedActionText(group)}</strong>
                 </div>
               </label>
             );

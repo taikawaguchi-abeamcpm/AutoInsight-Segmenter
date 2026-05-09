@@ -1192,20 +1192,20 @@ textarea {
 
 .outcome-group-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .outcome-group-card {
   display: grid;
-  grid-template-columns: auto auto minmax(240px, 1fr) minmax(260px, 0.9fr);
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr);
+  align-items: start;
+  gap: 14px;
   width: 100%;
   min-width: 0;
   border: 1px solid #d9e3e7;
   border-radius: 8px;
   background: #ffffff;
-  padding: 12px;
+  padding: 16px;
 }
 
 .outcome-group-card.selected {
@@ -1213,25 +1213,83 @@ textarea {
   background: #f0faf6;
 }
 
-.outcome-group-card input {
-  width: auto;
+.outcome-group-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
 }
 
-.outcome-group-card strong {
+.outcome-group-main input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.outcome-group-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.outcome-group-copy strong {
+  color: #14232c;
+  font-size: 18px;
   overflow-wrap: anywhere;
 }
 
-.outcome-group-card p {
+.outcome-group-copy p {
   margin: 0;
   color: #5b6c75;
   line-height: 1.5;
 }
 
-.outcome-group-metrics {
+.outcome-condition-list {
+  grid-column: 1;
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 8px;
+}
+
+.outcome-condition-list .chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.outcome-decision-grid {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.outcome-decision-grid div,
+.outcome-next-action {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e0e8ec;
+  border-radius: 8px;
+  background: #f8fbfc;
+  padding: 10px;
+}
+
+.outcome-decision-grid span,
+.outcome-next-action span {
+  color: #60737c;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.outcome-decision-grid strong,
+.outcome-next-action strong {
+  overflow-wrap: anywhere;
+}
+
+.outcome-next-action {
+  grid-column: 1 / -1;
+  background: #eff8f4;
 }
 
 .pattern-list button {
@@ -1408,13 +1466,14 @@ textarea {
   }
 
   .outcome-group-card {
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
-  .outcome-group-card p,
-  .outcome-group-metrics {
-    grid-column: 3;
-    justify-content: flex-start;
+  .outcome-condition-list,
+  .outcome-decision-grid,
+  .outcome-next-action {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 
@@ -1438,13 +1497,11 @@ textarea {
   .feature-row,
   .condition-row,
   .status-strip,
-  .checklist-strip,
-  .outcome-group-card {
+  .checklist-strip {
     grid-template-columns: 1fr;
   }
 
-  .outcome-group-card p,
-  .outcome-group-metrics {
-    grid-column: auto;
+  .outcome-decision-grid {
+    grid-template-columns: 1fr;
   }
 }
