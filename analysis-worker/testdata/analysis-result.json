@@ -1,0 +1,1101 @@
+{
+  "id": "analysis-test-job",
+  "analysisJobId": "analysis-test-job",
+  "runId": "analysis-test-run",
+  "datasetId": "analysis-test-dataset",
+  "mappingDocumentId": "analysis-test-mapping",
+  "mode": "autopilot",
+  "status": "completed",
+  "progressPercent": 100,
+  "message": "Fabric 実データ 120 行を集約して Python worker で分析しました。",
+  "createdAt": "2026-05-09T01:08:45.390584Z",
+  "startedAt": "2026-05-09T01:08:45.390584Z",
+  "completedAt": "2026-05-09T01:08:45.390584Z",
+  "summary": {
+    "analyzedRowCount": 120,
+    "topFeatureCount": 50,
+    "validPatternCount": 12,
+    "recommendedSegmentCount": 9,
+    "baselineMetricValue": 0.325,
+    "improvedMetricValue": 1.0,
+    "improvementRate": 2.0769230769230766
+  },
+  "featureImportances": [
+    {
+      "featureKey": "auto_amount_avg_30d",
+      "label": "Amount avg last 30d",
+      "category": "transaction",
+      "importanceScore": 99,
+      "direction": "positive",
+      "aggregation": "avg",
+      "missingRate": 0.0,
+      "description": "Sales.amount を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_amount_sum_30d",
+      "label": "Amount sum last 30d",
+      "category": "transaction",
+      "importanceScore": 98,
+      "direction": "positive",
+      "aggregation": "sum",
+      "missingRate": 0.0,
+      "description": "Sales.amount を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+      "label": "Activity Type value counts last 90d = Proposal count",
+      "category": "behavior",
+      "importanceScore": 97,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_amount_avg_90d",
+      "label": "Amount avg last 90d",
+      "category": "transaction",
+      "importanceScore": 97,
+      "direction": "positive",
+      "aggregation": "avg",
+      "missingRate": 0.0,
+      "description": "Sales.amount を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+      "label": "Activity Type value counts = Proposal count",
+      "category": "behavior",
+      "importanceScore": 96,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_amount_sum_90d",
+      "label": "Amount sum last 90d",
+      "category": "transaction",
+      "importanceScore": 96,
+      "direction": "positive",
+      "aggregation": "sum",
+      "missingRate": 0.0,
+      "description": "Sales.amount を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activityat_recency_days",
+      "label": "Activity At recency days",
+      "category": "behavior",
+      "importanceScore": 91,
+      "direction": "positive",
+      "aggregation": "latest",
+      "missingRate": 0.0,
+      "description": "Activities.activity_at を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_90d_eq_meeting",
+      "label": "Activity Type value counts last 90d = Meeting count",
+      "category": "behavior",
+      "importanceScore": 85,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_90d_eq_email",
+      "label": "Activity Type value counts last 90d = Email count",
+      "category": "behavior",
+      "importanceScore": 84,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_eq_meeting",
+      "label": "Activity Type value counts = Meeting count",
+      "category": "behavior",
+      "importanceScore": 83,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_eq_email",
+      "label": "Activity Type value counts = Email count",
+      "category": "behavior",
+      "importanceScore": 81,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_30d_eq_webvisit",
+      "label": "Activity Type value counts last 30d = WebVisit count",
+      "category": "behavior",
+      "importanceScore": 79,
+      "direction": "neutral",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autocompanyageyearslatest_autoactivityatrecencydays_ratio",
+      "label": "Company Age Years latest ratio Activity At recency days",
+      "category": "derived",
+      "importanceScore": 77,
+      "direction": "negative",
+      "aggregation": "ratio",
+      "missingRate": 0.0,
+      "description": "Customers.company_age_years:activity_at を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_30d_eq_call",
+      "label": "Activity Type value counts last 30d = Call count",
+      "category": "behavior",
+      "importanceScore": 73,
+      "direction": "neutral",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_leadsource_none",
+      "label": "Lead Source none",
+      "category": "profile",
+      "importanceScore": 73,
+      "direction": "negative",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Customers.lead_source を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_30d_eq_meeting",
+      "label": "Activity Type value counts last 30d = Meeting count",
+      "category": "behavior",
+      "importanceScore": 71,
+      "direction": "neutral",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_industry_none",
+      "label": "Industry none",
+      "category": "profile",
+      "importanceScore": 71,
+      "direction": "negative",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Customers.industry を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_count",
+      "label": "Activity Type count",
+      "category": "behavior",
+      "importanceScore": 69,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_count_90d",
+      "label": "Activity Type count last 90d",
+      "category": "behavior",
+      "importanceScore": 68,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_region_none",
+      "label": "Region none",
+      "category": "profile",
+      "importanceScore": 68,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Customers.region を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_30d_eq_email",
+      "label": "Activity Type value counts last 30d = Email count",
+      "category": "behavior",
+      "importanceScore": 67,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autocompanyageyearslatest_ratio",
+      "label": "Employee Count latest ratio Company Age Years latest",
+      "category": "derived",
+      "importanceScore": 66,
+      "direction": "negative",
+      "aggregation": "ratio",
+      "missingRate": 0.0,
+      "description": "Customers.employee_count:company_age_years を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_90d_eq_webvisit",
+      "label": "Activity Type value counts last 90d = WebVisit count",
+      "category": "behavior",
+      "importanceScore": 65,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_reactionhours_avg_90d",
+      "label": "Reaction Hours avg last 90d",
+      "category": "behavior",
+      "importanceScore": 65,
+      "direction": "negative",
+      "aggregation": "avg",
+      "missingRate": 0.26666666666666666,
+      "description": "Activities.reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autoreactionhoursavg90d_product",
+      "label": "Employee Count latest product Reaction Hours avg last 90d",
+      "category": "derived",
+      "importanceScore": 63,
+      "direction": "negative",
+      "aggregation": "product",
+      "missingRate": 0.26666666666666666,
+      "description": "Customers.employee_count:reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_eq_webvisit",
+      "label": "Activity Type value counts = WebVisit count",
+      "category": "behavior",
+      "importanceScore": 62,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_discountrate_avg_30d",
+      "label": "Discount Rate avg last 30d",
+      "category": "transaction",
+      "importanceScore": 62,
+      "direction": "negative",
+      "aggregation": "avg",
+      "missingRate": 0.0,
+      "description": "Sales.discount_rate を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_companyageyears_latest",
+      "label": "Company Age Years latest",
+      "category": "profile",
+      "importanceScore": 62,
+      "direction": "neutral",
+      "aggregation": "latest",
+      "missingRate": 0.0,
+      "description": "Customers.company_age_years を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_discountrate_sum_30d",
+      "label": "Discount Rate sum last 30d",
+      "category": "transaction",
+      "importanceScore": 61,
+      "direction": "negative",
+      "aggregation": "sum",
+      "missingRate": 0.0,
+      "description": "Sales.discount_rate を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autocompanyageyearslatest_autoactivitytypedistinctcount_ratio",
+      "label": "Company Age Years latest ratio Activity Type distinct_count",
+      "category": "derived",
+      "importanceScore": 61,
+      "direction": "negative",
+      "aggregation": "ratio",
+      "missingRate": 0.0,
+      "description": "Customers.company_age_years:activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autoreactionhourscount_ratio",
+      "label": "Employee Count latest ratio Reaction Hours count",
+      "category": "derived",
+      "importanceScore": 61,
+      "direction": "negative",
+      "aggregation": "ratio",
+      "missingRate": 0.26666666666666666,
+      "description": "Customers.employee_count:reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_reactionhours_sum_90d",
+      "label": "Reaction Hours sum last 90d",
+      "category": "behavior",
+      "importanceScore": 60,
+      "direction": "negative",
+      "aggregation": "sum",
+      "missingRate": 0.26666666666666666,
+      "description": "Activities.reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autocompanyageyearslatest_product",
+      "label": "Employee Count latest product Company Age Years latest",
+      "category": "derived",
+      "importanceScore": 60,
+      "direction": "negative",
+      "aggregation": "product",
+      "missingRate": 0.0,
+      "description": "Customers.employee_count:company_age_years を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_90d_eq_visit",
+      "label": "Activity Type value counts last 90d = Visit count",
+      "category": "behavior",
+      "importanceScore": 56,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_discountrate_avg_90d",
+      "label": "Discount Rate avg last 90d",
+      "category": "transaction",
+      "importanceScore": 55,
+      "direction": "negative",
+      "aggregation": "avg",
+      "missingRate": 0.0,
+      "description": "Sales.discount_rate を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_email_visit_3d",
+      "label": "Activity Type latest Email -> Visit within 3d",
+      "category": "derived",
+      "importanceScore": 55,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autoreactionhoursavg90d_ratio",
+      "label": "Employee Count latest ratio Reaction Hours avg last 90d",
+      "category": "derived",
+      "importanceScore": 54,
+      "direction": "negative",
+      "aggregation": "ratio",
+      "missingRate": 0.26666666666666666,
+      "description": "Customers.employee_count:reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_email_call_3d",
+      "label": "Activity Type latest Email -> Call within 3d",
+      "category": "derived",
+      "importanceScore": 54,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_email_call_7d",
+      "label": "Activity Type latest Email -> Call within 7d",
+      "category": "derived",
+      "importanceScore": 54,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_email_visit_7d",
+      "label": "Activity Type latest Email -> Visit within 7d",
+      "category": "derived",
+      "importanceScore": 54,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_activitytype_category_value_counts_eq_visit",
+      "label": "Activity Type value counts = Visit count",
+      "category": "behavior",
+      "importanceScore": 53,
+      "direction": "positive",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_discountrate_sum_90d",
+      "label": "Discount Rate sum last 90d",
+      "category": "transaction",
+      "importanceScore": 53,
+      "direction": "negative",
+      "aggregation": "sum",
+      "missingRate": 0.0,
+      "description": "Sales.discount_rate を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_salesrepteam_category_value_counts_90d_eq_inside",
+      "label": "Sales Rep Team value counts last 90d = inside count",
+      "category": "behavior",
+      "importanceScore": 53,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.sales_rep_team を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_email_proposal_7d",
+      "label": "Activity Type latest Email -> Proposal within 7d",
+      "category": "derived",
+      "importanceScore": 53,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_salesrepteam_category_value_counts_30d_eq_inside",
+      "label": "Sales Rep Team value counts last 30d = inside count",
+      "category": "behavior",
+      "importanceScore": 52,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.sales_rep_team を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_salesrepteam_category_value_counts_eq_inside",
+      "label": "Sales Rep Team value counts = inside count",
+      "category": "behavior",
+      "importanceScore": 52,
+      "direction": "negative",
+      "aggregation": "count",
+      "missingRate": 0.0,
+      "description": "Activities.sales_rep_team を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_productcategory_distinct_count",
+      "label": "Product Category distinct_count",
+      "category": "transaction",
+      "importanceScore": 51,
+      "direction": "negative",
+      "aggregation": "distinct_count",
+      "missingRate": 0.0,
+      "description": "Sales.product_category を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autoactivitytypelatest_visit_proposal_7d",
+      "label": "Activity Type latest Visit -> Proposal within 7d",
+      "category": "derived",
+      "importanceScore": 51,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.activity_type を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_combo_autoemployeecountlatest_autoreactionhourssum90d_ratio",
+      "label": "Employee Count latest ratio Reaction Hours sum last 90d",
+      "category": "derived",
+      "importanceScore": 50,
+      "direction": "neutral",
+      "aggregation": "ratio",
+      "missingRate": 0.26666666666666666,
+      "description": "Customers.employee_count:reaction_hours を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    },
+    {
+      "featureKey": "auto_transition_autosalesrepteamlatest_inside_field_3d",
+      "label": "Sales Rep Team latest inside -> field within 3d",
+      "category": "derived",
+      "importanceScore": 50,
+      "direction": "positive",
+      "aggregation": "none",
+      "missingRate": 0.0,
+      "description": "Activities.sales_rep_team を実データ 120 行で集約し、目的変数 Won Flag との差を評価しました。"
+    }
+  ],
+  "interactionPairs": [
+    {
+      "leftFeatureKey": "auto_transition_autoactivitytypelatest_email_visit_3d",
+      "rightFeatureKey": "auto_transition_autoactivitytypelatest_email_visit_7d",
+      "synergyScore": 100,
+      "summary": "Activity Type latest Email -> Visit within 3d が True と Activity Type latest Email -> Visit within 7d が True を同時に満たす 24 行の成果率は 100.0% です。"
+    }
+  ],
+  "goldenPatterns": [
+    {
+      "id": "pattern-real-1",
+      "title": "Activity Type latest Email -> Visit within 3d が True",
+      "conditions": [
+        {
+          "featureKey": "auto_transition_autoactivitytypelatest_email_visit_3d",
+          "operator": "eq",
+          "value": "True",
+          "label": "Activity Type latest Email -> Visit within 3d が True"
+        }
+      ],
+      "supportRate": 0.2,
+      "lift": 3.0769230769230766,
+      "conversionDelta": 0.675,
+      "confidence": 0.55,
+      "matchedCount": 24,
+      "description": "Activity Type latest Email -> Visit within 3d が True の 24 件では、Won Flag の比率が 100.0% でした。全体平均 32.5% より 67.5pt 高い条件です。",
+      "recommendedAction": "Activity Type latest Email -> Visit within 3d が True を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-2",
+      "title": "Activity Type latest Email -> Visit within 7d が True",
+      "conditions": [
+        {
+          "featureKey": "auto_transition_autoactivitytypelatest_email_visit_7d",
+          "operator": "eq",
+          "value": "True",
+          "label": "Activity Type latest Email -> Visit within 7d が True"
+        }
+      ],
+      "supportRate": 0.2,
+      "lift": 3.0769230769230766,
+      "conversionDelta": 0.675,
+      "confidence": 0.54,
+      "matchedCount": 24,
+      "description": "Activity Type latest Email -> Visit within 7d が True の 24 件では、Won Flag の比率が 100.0% でした。全体平均 32.5% より 67.5pt 高い条件です。",
+      "recommendedAction": "Activity Type latest Email -> Visit within 7d が True を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-3",
+      "title": "Activity Type latest Visit -> Proposal within 7d が True",
+      "conditions": [
+        {
+          "featureKey": "auto_transition_autoactivitytypelatest_visit_proposal_7d",
+          "operator": "eq",
+          "value": "True",
+          "label": "Activity Type latest Visit -> Proposal within 7d が True"
+        }
+      ],
+      "supportRate": 0.2,
+      "lift": 3.0769230769230766,
+      "conversionDelta": 0.675,
+      "confidence": 0.51,
+      "matchedCount": 24,
+      "description": "Activity Type latest Visit -> Proposal within 7d が True の 24 件では、Won Flag の比率が 100.0% でした。全体平均 32.5% より 67.5pt 高い条件です。",
+      "recommendedAction": "Activity Type latest Visit -> Proposal within 7d が True を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-4",
+      "title": "Amount avg last 30d が 154165.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.95,
+      "matchedCount": 31,
+      "description": "Amount avg last 30d が 154165.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount avg last 30d が 154165.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-5",
+      "title": "Amount sum last 30d が 154165.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.95,
+      "matchedCount": 31,
+      "description": "Amount sum last 30d が 154165.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount sum last 30d が 154165.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-6",
+      "title": "Amount avg last 90d が 137723.75 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_90d",
+          "operator": "gte",
+          "value": 137723.75,
+          "label": "Amount avg last 90d が 137723.75 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.95,
+      "matchedCount": 31,
+      "description": "Amount avg last 90d が 137723.75 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount avg last 90d が 137723.75 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-7",
+      "title": "Amount sum last 90d が 550895.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_90d",
+          "operator": "gte",
+          "value": 550895.0,
+          "label": "Amount sum last 90d が 550895.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.95,
+      "matchedCount": 31,
+      "description": "Amount sum last 90d が 550895.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount sum last 90d が 550895.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-8",
+      "title": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.6,
+      "matchedCount": 31,
+      "description": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-9",
+      "title": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.6,
+      "matchedCount": 31,
+      "description": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-10",
+      "title": "Amount avg last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.6,
+      "matchedCount": 31,
+      "description": "Amount avg last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount avg last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-11",
+      "title": "Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.6,
+      "matchedCount": 31,
+      "description": "Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 を条件にしたセグメントで施策検証してください。"
+    },
+    {
+      "id": "pattern-real-12",
+      "title": "Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Amount avg last 90d が 137723.75 以上 かつ Activity Type value counts = Proposal count が 0.0 以上",
+      "conditions": [
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_avg_90d",
+          "operator": "gte",
+          "value": 137723.75,
+          "label": "Amount avg last 90d が 137723.75 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "supportRate": 0.25833333333333336,
+      "lift": 2.6799007444168734,
+      "conversionDelta": 0.5459677419354838,
+      "confidence": 0.6,
+      "matchedCount": 31,
+      "description": "Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Amount avg last 90d が 137723.75 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 の 31 件では、Won Flag の比率が 87.1% でした。全体平均 32.5% より 54.6pt 高い条件です。",
+      "recommendedAction": "Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Amount avg last 90d が 137723.75 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 を条件にしたセグメントで施策検証してください。"
+    }
+  ],
+  "segmentRecommendations": [
+    {
+      "id": "segment-real-4",
+      "name": "Amount avg last 30d が 154165.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-4",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-5",
+      "name": "Amount sum last 30d が 154165.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-5",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-6",
+      "name": "Amount avg last 90d が 137723.75 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-6",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_90d",
+          "operator": "gte",
+          "value": 137723.75,
+          "label": "Amount avg last 90d が 137723.75 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-7",
+      "name": "Amount sum last 90d が 550895.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-7",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_90d",
+          "operator": "gte",
+          "value": 550895.0,
+          "label": "Amount sum last 90d が 550895.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-8",
+      "name": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-8",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-9",
+      "name": "Amount avg last 30d が 154165.0 以上 かつ Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-9",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-10",
+      "name": "Amount avg last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-10",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_avg_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount avg last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-11",
+      "name": "Amount sum last 30d が 154165.0 以上 かつ Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-11",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_amount_sum_30d",
+          "operator": "gte",
+          "value": 154165.0,
+          "label": "Amount sum last 30d が 154165.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    },
+    {
+      "id": "segment-real-12",
+      "name": "Activity Type value counts last 90d = Proposal count が 0.0 以上 かつ Amount avg last 90d が 137723.75 以上 かつ Activity Type value counts = Proposal count が 0.0 以上 未成果候補",
+      "description": "指定条件に一致し、成果データで高い傾向が見られる候補です。既定では未成果の対象だけを施策候補にします。",
+      "sourcePatternId": "pattern-real-12",
+      "estimatedAudienceSize": 4,
+      "estimatedConversionRate": 0.8709677419354838,
+      "conditions": [
+        {
+          "featureKey": "auto_activitytype_category_value_counts_90d_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts last 90d = Proposal count が 0.0 以上"
+        },
+        {
+          "featureKey": "auto_amount_avg_90d",
+          "operator": "gte",
+          "value": 137723.75,
+          "label": "Amount avg last 90d が 137723.75 以上"
+        },
+        {
+          "featureKey": "auto_activitytype_category_value_counts_eq_proposal",
+          "operator": "gte",
+          "value": 0.0,
+          "label": "Activity Type value counts = Proposal count が 0.0 以上"
+        }
+      ],
+      "useCase": "未成果候補リスト化",
+      "priorityScore": 100
+    }
+  ],
+  "modelMetadata": {
+    "modelType": "logistic_regression",
+    "modelVersion": "python-stdlib-logistic-v2",
+    "trainingRowCount": 90,
+    "trainingFeatureCount": 152,
+    "validationRowCount": 30,
+    "logLoss": 0.07430987528161158,
+    "validationLogLoss": 0.06740455860995091,
+    "rocAuc": 1.0,
+    "prAuc": 1.0,
+    "analysisUnit": "customer",
+    "analysisUnitKeyColumn": "customer_id",
+    "sourceRowCount": 120,
+    "blockedFeatureCount": 0,
+    "autoBlockedFeatureCount": 0,
+    "timeUnsafeFeatureCount": 0,
+    "futureFeatureValueCount": 0,
+    "outsideWindowFeatureValueCount": 4014,
+    "targetEventTimeColumn": "observed_at",
+    "segmentObjective": "unconverted_targeting",
+    "randomSeed": 42,
+    "importanceMethod": "hybrid",
+    "autopilotGeneratedFeatureCount": 46,
+    "autoDerivedCategoryFeatureCount": 28,
+    "autoDerivedTransitionFeatureCount": 30,
+    "autoDerivedNumericComboFeatureCount": 18,
+    "autopilotCandidateModels": [
+      {
+        "strategy": "accuracy",
+        "featureCount": 110,
+        "score": 66.0898,
+        "rocAuc": 1.0,
+        "prAuc": 1.0,
+        "validationLogLoss": 0.06740455860995091
+      },
+      {
+        "strategy": "explainability",
+        "featureCount": 100,
+        "score": 64.45,
+        "rocAuc": 1.0,
+        "prAuc": 1.0,
+        "validationLogLoss": 0.0860002310176382
+      },
+      {
+        "strategy": "segmentability",
+        "featureCount": 110,
+        "score": 71.0898,
+        "rocAuc": 1.0,
+        "prAuc": 1.0,
+        "validationLogLoss": 0.06740455860995091
+      }
+    ],
+    "autopilotSelectedStrategy": "segmentability"
+  }
+}

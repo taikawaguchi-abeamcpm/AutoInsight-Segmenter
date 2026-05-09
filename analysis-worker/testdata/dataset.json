@@ -1,0 +1,233 @@
+{
+  "id": "analysis-test-dataset",
+  "workspaceId": "local-fixture",
+  "name": "analysis_test_dataset",
+  "displayName": "Analysis Test Dataset",
+  "lastSyncedAt": "2026-05-09T01:08:42.779Z",
+  "tables": [
+    {
+      "id": "tbl-customers",
+      "name": "customers",
+      "displayName": "Customers",
+      "rowCount": 120,
+      "columns": [
+        {
+          "id": "col-customer-id",
+          "tableId": "tbl-customers",
+          "name": "customer_id",
+          "displayName": "Customer ID",
+          "dataType": "string",
+          "nullable": false,
+          "isPrimaryKey": true,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-industry",
+          "tableId": "tbl-customers",
+          "name": "industry",
+          "displayName": "Industry",
+          "dataType": "string",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-employee-count",
+          "tableId": "tbl-customers",
+          "name": "employee_count",
+          "displayName": "Employee Count",
+          "dataType": "integer",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-region",
+          "tableId": "tbl-customers",
+          "name": "region",
+          "displayName": "Region",
+          "dataType": "string",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-company-age",
+          "tableId": "tbl-customers",
+          "name": "company_age_years",
+          "displayName": "Company Age Years",
+          "dataType": "integer",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-lead-source",
+          "tableId": "tbl-customers",
+          "name": "lead_source",
+          "displayName": "Lead Source",
+          "dataType": "string",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-observed-at",
+          "tableId": "tbl-customers",
+          "name": "observed_at",
+          "displayName": "Observed At",
+          "dataType": "datetime",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-won-flag",
+          "tableId": "tbl-customers",
+          "name": "won_flag",
+          "displayName": "Won Flag",
+          "dataType": "boolean",
+          "nullable": false,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        }
+      ]
+    },
+    {
+      "id": "tbl-activities",
+      "name": "activities",
+      "displayName": "Activities",
+      "rowCount": 339,
+      "columns": [
+        {
+          "id": "col-activity-id",
+          "tableId": "tbl-activities",
+          "name": "activity_id",
+          "displayName": "Activity ID",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": true,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-activity-customer-id",
+          "tableId": "tbl-activities",
+          "name": "customer_id",
+          "displayName": "Customer ID",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": true
+        },
+        {
+          "id": "col-activity-at",
+          "tableId": "tbl-activities",
+          "name": "activity_at",
+          "displayName": "Activity At",
+          "dataType": "datetime",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-activity-type",
+          "tableId": "tbl-activities",
+          "name": "activity_type",
+          "displayName": "Activity Type",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-reaction-hours",
+          "tableId": "tbl-activities",
+          "name": "reaction_hours",
+          "displayName": "Reaction Hours",
+          "dataType": "float",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-sales-rep-team",
+          "tableId": "tbl-activities",
+          "name": "sales_rep_team",
+          "displayName": "Sales Rep Team",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        }
+      ]
+    },
+    {
+      "id": "tbl-sales",
+      "name": "sales",
+      "displayName": "Sales",
+      "rowCount": 480,
+      "columns": [
+        {
+          "id": "col-sale-id",
+          "tableId": "tbl-sales",
+          "name": "sale_id",
+          "displayName": "Sale ID",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": true,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-sale-customer-id",
+          "tableId": "tbl-sales",
+          "name": "customer_id",
+          "displayName": "Customer ID",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": true
+        },
+        {
+          "id": "col-sale-at",
+          "tableId": "tbl-sales",
+          "name": "sale_at",
+          "displayName": "Sale At",
+          "dataType": "datetime",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-product-category",
+          "tableId": "tbl-sales",
+          "name": "product_category",
+          "displayName": "Product Category",
+          "dataType": "string",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-amount",
+          "tableId": "tbl-sales",
+          "name": "amount",
+          "displayName": "Amount",
+          "dataType": "float",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        },
+        {
+          "id": "col-discount-rate",
+          "tableId": "tbl-sales",
+          "name": "discount_rate",
+          "displayName": "Discount Rate",
+          "dataType": "float",
+          "nullable": true,
+          "isPrimaryKey": false,
+          "isForeignKey": false
+        }
+      ]
+    }
+  ]
+}
