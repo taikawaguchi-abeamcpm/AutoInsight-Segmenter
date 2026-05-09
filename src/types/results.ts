@@ -18,6 +18,7 @@ export interface AnalysisResultDocument {
   interactionPairs: FeatureInteractionResult[];
   goldenPatterns: GoldenPatternResult[];
   segmentRecommendations: SegmentRecommendation[];
+  analysisRows?: AnalysisDataRow[];
   modelMetadata?: AnalysisModelMetadata;
 }
 
@@ -101,6 +102,13 @@ export interface SegmentAudienceRow {
   targetValue?: string | number | boolean;
   attributes?: Record<string, string | number | boolean | null>;
   matchedReasons?: string[];
+}
+
+export interface AnalysisDataRow {
+  rowId?: string | number;
+  customerKey: string;
+  targetValue?: string | number | boolean;
+  values: Record<string, string | number | boolean | null>;
 }
 
 export interface AnalysisModelMetadata {

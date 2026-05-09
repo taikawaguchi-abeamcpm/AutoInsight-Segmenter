@@ -1944,8 +1944,6 @@ def build_golden_patterns(
             ),
             "recommendedAction": f"{title} を条件にしたセグメントで施策検証してください。",
         })
-        if len(patterns) >= pattern_count:
-            break
     return patterns
 
 
@@ -1980,6 +1978,25 @@ def build_audience_rows(candidate_rows: list[dict[str, Any]], pattern: dict[str,
         })
 
     return audience_rows
+
+
+def build_analysis_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    analysis_rows = []
+
+    for row in rows:
+        values = {
+            key: value
+            for key, value in row.items()
+            if not key.startswith("__") and value is not None
+        }
+        analysis_rows.append({
+            "rowId": row.get("__rowId"),
+            "customerKey": str(row.get("__unitKey") or row.get("__rowId")),
+            "targetValue": row.get("__target"),
+            "values": values,
+        })
+
+    return analysis_rows
 
 
 def failed_result(
@@ -2214,6 +2231,7 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
         "interactionPairs": build_interaction_pairs(patterns, rows),
         "goldenPatterns": patterns,
         "segmentRecommendations": segments,
+        "analysisRows": build_analysis_rows(rows),
         "modelMetadata": {
             **{
                 key: value
@@ -2247,9 +2265,75 @@ def build_real_analysis_result(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_customer_list_result(payload: dict[str, Any]) -> dict[str, Any]:
+    connection = payload["connection"]
+    auth = payload.get("auth") or {}
+    mapping = payload["mapping"]
+    dataset = payload["dataset"]
+    config = payload.get("config") or {}
+    segments = payload.get("segments") or []
+    columns = column_id_map(dataset)
+
+    target_mapping = next(
+        (column for column in mapping.get("columnMappings", []) if column.get("columnRole") == "target" or column.get("targetConfig")),
+        None,
+    )
+    target = columns.get(target_mapping.get("columnId")) if target_mapping else None
+    if not target:
+        return {"segments": []}
+
+    target_config = dict(target_mapping.get("targetConfig") or {})
+    if config.get("mode") == "custom" and str(config.get("targetPositiveValue") or "").strip():
+        target_config["positiveValue"] = str(config["targetPositiveValue"]).strip()
+
+    diagnostics: dict[str, Any] = {}
+    target = {"table": target["table"], "column": target["column"]}
+    features = build_feature_descriptors(mapping, dataset, target, target_config, config, diagnostics)
+    event_time_columns_by_table = resolve_event_time_columns_by_table(mapping, dataset)
+    target_event_time_column = resolve_target_event_time_column(mapping, dataset, target, target_config)
+    features = filter_time_safe_features(features, target_event_time_column, event_time_columns_by_table, diagnostics)
+    analysis_unit = config.get("analysisUnit") or "customer"
+    analysis_unit_key_column = resolve_analysis_unit_key_column(mapping, dataset, target) if analysis_unit == "customer" else None
+    materialized = materialize_analysis_rows(
+        connection,
+        auth,
+        dataset,
+        target,
+        target_config,
+        features,
+        event_time_columns_by_table,
+        analysis_unit_key_column,
+        target_event_time_column,
+        diagnostics,
+        config.get("mode") == "autopilot" and config.get("allowGeneratedFeatures", True),
+    )
+    rows = materialized["rows"]
+    features = [feature for feature in features if not feature.get("template")]
+    if analysis_unit == "customer" and analysis_unit_key_column:
+        rows = collapse_rows_to_analysis_unit(rows, features)
+
+    hydrated_segments = []
+    for segment in segments:
+        conditions = segment.get("conditions") or []
+        matched = [
+            row for row in rows
+            if all(matches_condition(row, condition) for condition in conditions)
+        ]
+        hydrated_segments.append({
+            **segment,
+            "estimatedAudienceSize": len(matched),
+            "audienceRows": build_audience_rows(matched, {"conditions": conditions}),
+        })
+
+    return {
+        "segments": hydrated_segments,
+        "analysisRows": build_analysis_rows(rows),
+    }
+
+
 def main() -> None:
     payload = json.loads(sys.stdin.read())
-    result = build_real_analysis_result(payload)
+    result = build_customer_list_result(payload) if payload.get("operation") == "customerList" else build_real_analysis_result(payload)
     json.dump(result, sys.stdout, ensure_ascii=False, separators=(",", ":"))
 
 

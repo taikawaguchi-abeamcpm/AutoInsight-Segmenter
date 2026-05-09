@@ -1,6 +1,6 @@
 const { buildDataset, introspectFabric, fetchTableRows, getActiveConnection } = require('../src/fabricClient');
 const { correlationId, makeHash, nowIso } = require('../src/http');
-const { buildRealAnalysisResult, getAnalysisWorkerStatus } = require('../src/analysisEngine');
+const { buildCustomerListResult, buildRealAnalysisResult, getAnalysisWorkerStatus } = require('../src/analysisEngine');
 const { buildAnalysisSummary, buildSemanticMapping, normalizeSemanticMapping } = require('../src/semanticModel');
 const { completeOnboarding, getOrCreateUserSession } = require('../src/auth');
 
@@ -90,8 +90,9 @@ const normalizeAnalysisResultForStorage = ({ analysisResult, analysisJobId, runI
     },
     featureImportances: (analysisResult?.featureImportances || []).slice(0, 100),
     interactionPairs: (analysisResult?.interactionPairs || []).slice(0, 50),
-    goldenPatterns: (analysisResult?.goldenPatterns || []).slice(0, 50),
-    segmentRecommendations: (analysisResult?.segmentRecommendations || []).slice(0, 50)
+    goldenPatterns: analysisResult?.goldenPatterns || [],
+    segmentRecommendations: analysisResult?.segmentRecommendations || [],
+    analysisRows: analysisResult?.analysisRows || []
   });
 
   return {
@@ -100,89 +101,6 @@ const normalizeAnalysisResultForStorage = ({ analysisResult, analysisJobId, runI
     jobId: normalized.analysisJobId,
     partitionKey: normalized.analysisJobId
   };
-};
-
-const stripDecimalSuffixes = (value) => String(value || '').replace(/(\d+)\.0\b/g, '$1');
-
-const conditionFeatureLabel = (label) => {
-  const [feature] = String(label || '').split(' が ');
-  return stripDecimalSuffixes(feature || label);
-};
-
-const comparableConditionValue = (value) =>
-  stripDecimalSuffixes(String(value ?? '')).trim().toLowerCase();
-
-const canonicalConditionKey = (condition = {}) => {
-  const feature = conditionFeatureLabel(condition.label || condition.featureKey);
-  const [countFeature, countValue] = feature.split(':').map((part) => part.trim());
-
-  if (
-    countValue &&
-    countFeature.endsWith('別回数') &&
-    ['gt', 'gte'].includes(condition.operator) &&
-    Number(condition.value) >= 1
-  ) {
-    return `${countFeature.replace(/別回数$/, '')}:${comparableConditionValue(countValue)}`;
-  }
-
-  if (condition.operator === 'eq') {
-    return `${feature}:${comparableConditionValue(condition.value)}`;
-  }
-
-  return [
-    condition.featureKey || feature,
-    condition.operator,
-    comparableConditionValue(condition.value),
-    comparableConditionValue(condition.valueTo)
-  ].join(':');
-};
-
-const compactConditions = (conditions = []) => {
-  const seen = new Set();
-  return conditions.filter((condition) => {
-    const key = canonicalConditionKey(condition);
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-};
-
-const segmentConditionKey = (segment = {}) =>
-  compactConditions(segment.conditions || []).map(canonicalConditionKey).sort().join('&&');
-
-const hasAudienceRows = (segment = {}) =>
-  Array.isArray(segment.audienceRows) && segment.audienceRows.length > 0;
-
-const matchRequestedSegments = (sourceSegments = [], requestedSegments = []) => {
-  const byId = new Map(sourceSegments.map((segment) => [segment.id, segment]));
-  const byConditions = new Map(sourceSegments.map((segment) => [segmentConditionKey(segment), segment]));
-
-  return requestedSegments
-    .map((segment) => byId.get(segment.id) || byConditions.get(segmentConditionKey(segment)))
-    .filter(Boolean);
-};
-
-const mergeHydratedSegments = (storedResult, hydratedSegments) => {
-  const byId = new Map(hydratedSegments.map((segment) => [segment.id, segment]));
-  const byConditions = new Map(hydratedSegments.map((segment) => [segmentConditionKey(segment), segment]));
-  const usedIds = new Set();
-  const merged = (storedResult.segmentRecommendations || []).map((segment) => {
-    const hydrated = byId.get(segment.id) || byConditions.get(segmentConditionKey(segment));
-    if (!hydrated) {
-      return segment;
-    }
-
-    usedIds.add(hydrated.id);
-    return {
-      ...segment,
-      estimatedAudienceSize: hydrated.estimatedAudienceSize ?? segment.estimatedAudienceSize,
-      audienceRows: hydrated.audienceRows || segment.audienceRows
-    };
-  });
-
-  return [...merged, ...hydratedSegments.filter((segment) => !usedIds.has(segment.id))];
 };
 
 const failedAnalysisResult = ({ analysisJobId, runId, mapping, dataset, config, message, detail }) => {
@@ -940,34 +858,19 @@ module.exports = async function (context, req) {
       }
 
       const { queryAll, upsert } = getStore();
-      const records = await queryAll('analysisResults', {
+      const storedResult = (await queryAll('analysisResults', {
         query: 'SELECT * FROM c WHERE c.analysisJobId = @analysisJobId ORDER BY c.updatedAt DESC',
         parameters: [{ name: '@analysisJobId', value: analysisJobId }]
-      });
-      const storedResult = records[0];
-      if (!storedResult) {
-        error(context, 404, 'ANALYSIS_RESULT.NOT_FOUND', '保存済みの分析結果が見つかりません。');
-        return;
-      }
-
-      const existingMatches = matchRequestedSegments(storedResult.segmentRecommendations || [], segments);
-      if (existingMatches.length > 0 && existingMatches.every(hasAudienceRows)) {
-        json(context, 200, { segments: existingMatches });
-        return;
-      }
-
-      const run = (await queryAll('analysisRuns', {
-        query: 'SELECT * FROM c WHERE c.id = @id OR c.analysisJobId = @analysisJobId ORDER BY c.updatedAt DESC',
-        parameters: [
-          { name: '@id', value: analysisJobId },
-          { name: '@analysisJobId', value: analysisJobId }
-        ]
       }))[0];
+      const run = (await queryAll('analysisRuns', {
+        query: 'SELECT * FROM c WHERE c.id = @id ORDER BY c.updatedAt DESC',
+        parameters: [{ name: '@id', value: analysisJobId }]
+      }))[0];
+      const datasetId = storedResult?.datasetId || run?.datasetId;
       const config = run?.config;
-      const datasetId = storedResult.datasetId || run?.datasetId;
       const connection = await resolveConnectionForDataset(datasetId);
-      if (!config || !datasetId || !connection) {
-        error(context, 409, 'CUSTOMER_LIST.REBUILD_CONTEXT_MISSING', 'この保存済み結果は顧客リスト再生成に必要な分析条件が不足しています。再分析して結果を保存してください。');
+      if (!storedResult || !datasetId || !config || !connection) {
+        error(context, 409, 'CUSTOMER_LIST.CONTEXT_MISSING', 'この保存済み結果には顧客リスト抽出に必要な分析条件が不足しています。新しく分析を実行してください。');
         return;
       }
 
@@ -982,40 +885,26 @@ module.exports = async function (context, req) {
         ]
       }))[0];
       if (!mappingRecord) {
-        error(context, 409, 'CUSTOMER_LIST.MAPPING_MISSING', '顧客リスト再生成に必要な意味付け情報が見つかりません。再分析して結果を保存してください。');
+        error(context, 409, 'CUSTOMER_LIST.MAPPING_MISSING', '顧客リスト抽出に必要な意味付け情報が見つかりません。新しく分析を実行してください。');
         return;
       }
 
-      let hydratedResult;
-      try {
-        hydratedResult = await buildRealAnalysisResult({
-          connection,
-          req,
-          analysisJobId,
-          runId: storedResult.runId || run?.id || `run-${makeHash({ analysisJobId })}`,
-          mapping: normalizeSemanticMapping(mappingRecord, dataset),
-          dataset,
-          config
-        });
-      } catch (err) {
-        context.log.error('Customer list rebuild failed', err);
-        error(context, 500, 'CUSTOMER_LIST.REBUILD_FAILED', '顧客リストの再生成に失敗しました。Fabric接続と分析条件を確認してください。');
-        return;
-      }
-
-      const hydratedMatches = matchRequestedSegments(hydratedResult.segmentRecommendations || [], segments).filter(hasAudienceRows);
-      if (hydratedMatches.length === 0) {
-        json(context, 200, { segments: [] });
-        return;
-      }
+      const customerList = await buildCustomerListResult({
+        connection,
+        req,
+        mapping: normalizeSemanticMapping(mappingRecord, dataset),
+        dataset,
+        config,
+        segments
+      });
 
       await upsert('analysisResults', {
         ...storedResult,
-        segmentRecommendations: mergeHydratedSegments(storedResult, hydratedMatches),
+        analysisRows: customerList.analysisRows || storedResult.analysisRows || [],
         updatedAt: nowIso()
       });
 
-      json(context, 200, { segments: hydratedMatches });
+      json(context, 200, customerList);
       return;
     }
 

@@ -1,5 +1,5 @@
 import { apiRequest, createApiError, delay, type RequestOptions } from '../client';
-import type { AnalysisResultDocument, SavedAnalysisResultListItem, SegmentRecommendation, SelectedSegmentContext } from '../../types/results';
+import type { AnalysisDataRow, AnalysisResultDocument, SavedAnalysisResultListItem, SegmentRecommendation, SelectedSegmentContext } from '../../types/results';
 
 const SAVED_RESULTS_KEY = 'autoinsight.savedAnalysisResults.v1';
 
@@ -53,10 +53,6 @@ const asSavedResultList = (value: unknown): SavedAnalysisResultListItem[] | null
 
   return null;
 };
-
-export interface CustomerListResult {
-  segments: SegmentRecommendation[];
-}
 
 export const resultsApi = {
   async listSavedResults(options: RequestOptions = {}): Promise<SavedAnalysisResultListItem[]> {
@@ -129,8 +125,8 @@ export const resultsApi = {
     return rememberLocalResult(result);
   },
 
-  async getCustomerList(analysisJobId: string, segments: SegmentRecommendation[], options: RequestOptions = {}): Promise<CustomerListResult> {
-    const response = await apiRequest<CustomerListResult>(`/analysis-results/${encodeURIComponent(analysisJobId)}/customer-list`, {
+  async getCustomerList(analysisJobId: string, segments: SegmentRecommendation[], options: RequestOptions = {}): Promise<{ segments: SegmentRecommendation[]; analysisRows?: AnalysisDataRow[] }> {
+    const response = await apiRequest<{ segments: SegmentRecommendation[]; analysisRows?: AnalysisDataRow[] }>(`/analysis-results/${encodeURIComponent(analysisJobId)}/customer-list`, {
       method: 'POST',
       body: JSON.stringify({ segments }),
       signal: options.signal

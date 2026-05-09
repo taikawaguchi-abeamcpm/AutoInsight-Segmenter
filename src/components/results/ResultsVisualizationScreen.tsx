@@ -2,7 +2,7 @@ import { Download, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { isAbortError, isApiError } from '../../services/client';
 import { resultsApi } from '../../services/results/resultsApi';
-import type { AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation } from '../../types/results';
+import type { AnalysisDataRow, AnalysisResultDocument, GoldenPatternResult, PatternCondition, SegmentRecommendation } from '../../types/results';
 import { Badge, Button, Card, EmptyState, formatNumber, formatPercent } from '../common/ui';
 
 const operatorLabel: Record<string, string> = {
@@ -159,32 +159,84 @@ const rowsFromSegments = (segments: SegmentRecommendation[]) =>
     }))
   );
 
-const mergeAudienceRows = (result: AnalysisResultDocument, hydratedSegments: SegmentRecommendation[]): AnalysisResultDocument => {
-  if (hydratedSegments.length === 0) {
-    return result;
+const asComparable = (value: string | number | boolean | null | undefined) => {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'boolean') {
+    return value;
   }
 
-  const byId = new Map(hydratedSegments.map((segment) => [segment.id, segment]));
-  const byConditions = new Map(hydratedSegments.map((segment) => [canonicalGroupKey(compactConditions(segment.conditions)), segment]));
-  const usedIds = new Set<string>();
-  const mergedRecommendations = result.segmentRecommendations.map((segment) => {
-    const hydrated = byId.get(segment.id) ?? byConditions.get(canonicalGroupKey(compactConditions(segment.conditions)));
-    if (!hydrated) {
-      return segment;
-    }
+  const text = stripDecimalSuffixes(String(value ?? '')).trim();
+  const number = Number(text);
+  return text !== '' && Number.isFinite(number) ? number : text.toLowerCase();
+};
 
-    usedIds.add(hydrated.id);
-    return {
-      ...segment,
-      estimatedAudienceSize: hydrated.estimatedAudienceSize,
-      audienceRows: hydrated.audienceRows
-    };
-  });
-  const additions = hydratedSegments.filter((segment) => !usedIds.has(segment.id));
+const matchesCondition = (row: AnalysisDataRow, condition: PatternCondition) => {
+  const value = row.values[condition.featureKey];
+  const comparable = asComparable(value);
+  const expected = asComparable(condition.value);
+  const expectedTo = condition.valueTo === undefined ? undefined : asComparable(condition.valueTo);
+
+  switch (condition.operator) {
+    case 'eq':
+      return comparable === expected;
+    case 'neq':
+      return comparable !== expected;
+    case 'gt':
+      return Number(comparable) > Number(expected);
+    case 'gte':
+      return Number(comparable) >= Number(expected);
+    case 'lt':
+      return Number(comparable) < Number(expected);
+    case 'lte':
+      return Number(comparable) <= Number(expected);
+    case 'between':
+      return expectedTo !== undefined && Number(comparable) >= Number(expected) && Number(comparable) <= Number(expectedTo);
+    case 'in':
+      return String(condition.value)
+        .split(',')
+        .map((item) => comparableValue(item))
+        .includes(comparableValue(value ?? ''));
+    default:
+      return false;
+  }
+};
+
+const rowsFromAnalysisRows = (analysisRows: AnalysisDataRow[], segments: SegmentRecommendation[]) =>
+  segments.flatMap((segment) =>
+    analysisRows
+      .filter((row) => segment.conditions.every((condition) => matchesCondition(row, condition)))
+      .map((row) => ({
+        segmentId: segment.id,
+        segmentName: segment.name,
+        customerKey: row.customerKey,
+        targetValue: row.targetValue,
+        matchedReasons: segment.conditions.map((condition) => condition.label).join(' / '),
+        attributes: row.values
+      }))
+  );
+
+const mergeCustomerListResult = (
+  result: AnalysisResultDocument,
+  hydratedSegments: SegmentRecommendation[],
+  analysisRows?: AnalysisDataRow[]
+): AnalysisResultDocument => {
+  const byId = new Map(hydratedSegments.map((segment) => [segment.id, segment]));
 
   return {
     ...result,
-    segmentRecommendations: [...mergedRecommendations, ...additions]
+    analysisRows: analysisRows ?? result.analysisRows,
+    segmentRecommendations: result.segmentRecommendations.map((segment) => {
+      const hydrated = byId.get(segment.id);
+      return hydrated
+        ? {
+            ...segment,
+            estimatedAudienceSize: hydrated.estimatedAudienceSize,
+            audienceRows: hydrated.audienceRows
+          }
+        : segment;
+    })
   };
 };
 
@@ -287,23 +339,23 @@ export const ResultsVisualizationScreen = ({
 
     try {
       let exportSegments = selectedSegments;
-      let rows = rowsFromSegments(exportSegments);
+      let rows = result?.analysisRows?.length ? rowsFromAnalysisRows(result.analysisRows, exportSegments) : rowsFromSegments(exportSegments);
 
       if (rows.length === 0 && result) {
-        setActionNotice({ tone: 'warning', message: '保存済みの分析条件から顧客リストを準備しています。' });
-        const response = await resultsApi.getCustomerList(result.analysisJobId, selectedSegments);
+        setActionNotice({ tone: 'warning', message: '分析テーブルから顧客リストを抽出しています。' });
+        const response = await resultsApi.getCustomerList(result.analysisJobId, exportSegments);
         exportSegments = response.segments ?? [];
-        rows = rowsFromSegments(exportSegments);
-
-        if (exportSegments.length > 0) {
-          setResult((current) => (current ? mergeAudienceRows(current, exportSegments) : current));
+        rows = response.analysisRows?.length ? rowsFromAnalysisRows(response.analysisRows, exportSegments) : rowsFromSegments(exportSegments);
+        if (rows.length === 0) {
+          rows = rowsFromSegments(exportSegments);
         }
+        setResult((current) => (current ? mergeCustomerListResult(current, exportSegments, response.analysisRows) : current));
       }
 
       if (rows.length === 0) {
         setActionNotice({
           tone: 'error',
-          message: '顧客リストを作成できませんでした。分析を再実行してから結果を保存してください。'
+          message: '表示されている条件に一致する顧客リストを作成できませんでした。条件に該当する行がないか、分析条件の保存情報が不足しています。'
         });
         return;
       }
@@ -381,7 +433,10 @@ export const ResultsVisualizationScreen = ({
         <div className="outcome-group-list">
           {outcomeGroups.map((group, index) => {
             const selected = selectedOutcomeIds.includes(group.id);
-            const audienceSize = outcomeAudienceSize(group, result);
+            const groupSegment = toSegmentRecommendation(group, result);
+            const audienceSize = result.analysisRows?.length
+              ? rowsFromAnalysisRows(result.analysisRows, [groupSegment]).length
+              : outcomeAudienceSize(group, result);
             return (
               <label className={selected ? 'outcome-group-card selected' : 'outcome-group-card'} key={group.id}>
                 <div className="outcome-group-main">

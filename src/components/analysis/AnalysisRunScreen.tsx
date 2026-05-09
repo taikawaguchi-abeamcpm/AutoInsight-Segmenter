@@ -56,13 +56,13 @@ const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRu
       });
     }
 
-    if (config.maxFeatureCount < 1 || config.patternCount < 1) {
+    if (config.maxFeatureCount < 1) {
       issues.push({
         id: 'local-invalid-count',
         scope: 'analysis',
         severity: 'error',
         code: 'ANALYSIS.INVALID_COUNT',
-        message: 'Feature and pattern counts must be greater than zero.',
+        message: 'Feature count must be greater than zero.',
         blocking: true
       });
     }
@@ -424,15 +424,6 @@ export const AnalysisRunScreen = ({
                   min={1}
                   value={customConfig.maxFeatureCount}
                   onChange={(event) => updateConfig({ ...customConfig, maxFeatureCount: Number(event.target.value) })}
-                />
-              </Field>
-              <Field label="注目パターン数">
-                <input
-                  type="number"
-                  aria-label="注目パターン数"
-                  min={1}
-                  value={customConfig.patternCount}
-                  onChange={(event) => updateConfig({ ...customConfig, patternCount: Number(event.target.value) })}
                 />
               </Field>
             </div>

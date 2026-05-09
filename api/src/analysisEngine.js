@@ -288,7 +288,24 @@ const buildRealAnalysisResult = async ({ connection, req, analysisJobId, runId, 
   return WORKER_URL ? runRemotePythonWorker(payload) : runLocalPythonWorker(payload);
 };
 
+const buildCustomerListResult = async ({ connection, req, mapping, dataset, config, segments }) => {
+  const payload = {
+    operation: 'customerList',
+    connection,
+    auth: {
+      authorization: reqHeader(req, 'authorization')
+    },
+    mapping,
+    dataset,
+    config,
+    segments
+  };
+
+  return WORKER_URL ? runRemotePythonWorker(payload) : runLocalPythonWorker(payload);
+};
+
 module.exports = {
+  buildCustomerListResult,
   buildRealAnalysisResult,
   getAnalysisWorkerStatus
 };
