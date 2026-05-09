@@ -79,14 +79,29 @@ const canonicalConditionKey = (condition: PatternCondition) => {
 const canonicalGroupKey = (conditions: PatternCondition[]) =>
   conditions.map(canonicalConditionKey).sort().join('&&');
 
+const compactConditions = (conditions: PatternCondition[]) => {
+  const seen = new Set<string>();
+
+  return conditions.filter((condition) => {
+    const key = canonicalConditionKey(condition);
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+};
+
 const dedupeOutcomeGroups = (groups: OutcomeGroup[]) => {
   const deduped = new Map<string, OutcomeGroup>();
 
   groups.forEach((group) => {
-    const key = canonicalGroupKey(group.conditions);
+    const compacted = { ...group, conditions: compactConditions(group.conditions) };
+    const key = canonicalGroupKey(compacted.conditions);
     const current = deduped.get(key);
-    if (!current || (!current.segment && group.segment)) {
-      deduped.set(key, group);
+    if (!current || (!current.segment && compacted.segment)) {
+      deduped.set(key, compacted);
     }
   });
 
@@ -105,6 +120,28 @@ const outcomeEffectText = (pattern?: GoldenPatternResult) => {
   return parts.length > 0 ? parts.join(' / ') : '効果見込みを確認中';
 };
 
+const outcomeAudienceSize = (group: OutcomeGroup, result: AnalysisResultDocument) => {
+  if (typeof group.segment?.estimatedAudienceSize === 'number' && group.segment.estimatedAudienceSize > 0) {
+    return group.segment.estimatedAudienceSize;
+  }
+
+  if (typeof group.pattern?.supportRate === 'number' && typeof result.summary.analyzedRowCount === 'number') {
+    return Math.round(result.summary.analyzedRowCount * group.pattern.supportRate);
+  }
+
+  return 0;
+};
+
+const toSegmentRecommendation = (group: OutcomeGroup, result: AnalysisResultDocument): SegmentRecommendation =>
+  group.segment ?? {
+    id: `seg-${group.id}`,
+    name: outcomeGroupName(group),
+    sourcePatternId: group.pattern?.id,
+    estimatedAudienceSize: outcomeAudienceSize(group, result),
+    conditions: group.conditions,
+    priorityScore: Math.round(((group.pattern?.lift ?? 1) * 100) + ((group.pattern?.conversionDelta ?? 0) * 100))
+  };
+
 export const ResultsVisualizationScreen = ({
   analysisJobId,
   onBack,
@@ -115,7 +152,7 @@ export const ResultsVisualizationScreen = ({
   onSegmentsSelected: (context: SelectedSegmentContext) => void;
 }) => {
   const [result, setResult] = useState<AnalysisResultDocument | null>(null);
-  const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
+  const [selectedOutcomeIds, setSelectedOutcomeIds] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [savingResult, setSavingResult] = useState(false);
@@ -128,7 +165,7 @@ export const ResultsVisualizationScreen = ({
       .then((nextResult) => {
         setResult(nextResult);
         setLoadError(null);
-        setSelectedSegmentIds(nextResult.segmentRecommendations.slice(0, 1).map((segment) => segment.id));
+        setSelectedOutcomeIds([]);
       })
       .catch((error: unknown) => {
         if (!isAbortError(error)) {
@@ -139,11 +176,6 @@ export const ResultsVisualizationScreen = ({
 
     return () => controller.abort();
   }, [analysisJobId]);
-
-  const selectedSegments = useMemo(
-    () => result?.segmentRecommendations.filter((segment) => selectedSegmentIds.includes(segment.id)) ?? [],
-    [result, selectedSegmentIds]
-  );
 
   const outcomeGroups = useMemo<OutcomeGroup[]>(() => {
     if (!result) {
@@ -170,9 +202,19 @@ export const ResultsVisualizationScreen = ({
     );
   }, [result]);
 
-  const toggleSegment = (segmentId: string) => {
-    setSelectedSegmentIds((current) =>
-      current.includes(segmentId) ? current.filter((id) => id !== segmentId) : [...current, segmentId]
+  const selectedGroups = useMemo(
+    () => outcomeGroups.filter((group) => selectedOutcomeIds.includes(group.id)),
+    [outcomeGroups, selectedOutcomeIds]
+  );
+
+  const selectedSegments = useMemo(
+    () => (result ? selectedGroups.map((group) => toSegmentRecommendation(group, result)) : []),
+    [result, selectedGroups]
+  );
+
+  const toggleOutcome = (outcomeId: string) => {
+    setSelectedOutcomeIds((current) =>
+      current.includes(outcomeId) ? current.filter((id) => id !== outcomeId) : [...current, outcomeId]
     );
   };
 
@@ -271,15 +313,15 @@ export const ResultsVisualizationScreen = ({
         {outcomeGroups.length === 0 ? <EmptyState title="候補なし" description="成果に結びつく顧客群はまだ生成されていません。" /> : null}
         <div className="outcome-group-list">
           {outcomeGroups.map((group, index) => {
-            const selected = group.segment ? selectedSegmentIds.includes(group.segment.id) : false;
+            const selected = selectedOutcomeIds.includes(group.id);
+            const audienceSize = outcomeAudienceSize(group, result);
             return (
               <label className={selected ? 'outcome-group-card selected' : 'outcome-group-card'} key={group.id}>
                 <div className="outcome-group-main">
                   <input
                     type="checkbox"
                     checked={selected}
-                    disabled={!group.segment}
-                    onChange={() => group.segment && toggleSegment(group.segment.id)}
+                    onChange={() => toggleOutcome(group.id)}
                     aria-label={`${outcomeGroupName(group)}を選択`}
                   />
                   <div className="outcome-group-copy">
@@ -287,16 +329,15 @@ export const ResultsVisualizationScreen = ({
                     <strong>{outcomeGroupName(group)}</strong>
                   </div>
                 </div>
-                <div className="outcome-condition-list" aria-label="条件">
-                  {group.conditions.map((condition) => (
-                    <span className="chip strong" key={`${group.id}-${condition.featureKey}-${condition.label}`}>
-                      {conditionSummary([condition])}
-                    </span>
-                  ))}
-                </div>
-                <div className="outcome-effect-card">
-                  <span>期待効果</span>
-                  <strong>{outcomeEffectText(group.pattern)}</strong>
+                <div className="outcome-summary-cards">
+                  <div>
+                    <span>該当行数</span>
+                    <strong>{audienceSize > 0 ? `${formatNumber(audienceSize)} 行` : '-'}</strong>
+                  </div>
+                  <div>
+                    <span>期待効果</span>
+                    <strong>{outcomeEffectText(group.pattern)}</strong>
+                  </div>
                 </div>
               </label>
             );

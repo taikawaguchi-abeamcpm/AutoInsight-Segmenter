@@ -1213,6 +1213,10 @@ textarea {
   background: #f0faf6;
 }
 
+.outcome-group-card:hover {
+  border-color: #1d7660;
+}
+
 .outcome-group-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1238,22 +1242,15 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.outcome-condition-list {
-  grid-column: 1;
-  display: flex;
-  flex-wrap: wrap;
+.outcome-summary-cards {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 
-.outcome-condition-list .chip {
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.outcome-effect-card {
-  grid-row: 1 / span 2;
-  grid-column: 2;
+.outcome-summary-cards div {
   display: grid;
   gap: 4px;
   border: 1px solid #e0e8ec;
@@ -1262,13 +1259,13 @@ textarea {
   padding: 12px;
 }
 
-.outcome-effect-card span {
+.outcome-summary-cards span {
   color: #60737c;
   font-size: 12px;
   font-weight: 650;
 }
 
-.outcome-effect-card strong {
+.outcome-summary-cards strong {
   font-size: 16px;
   overflow-wrap: anywhere;
 }
@@ -1491,8 +1488,7 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .outcome-condition-list,
-  .outcome-effect-card {
+  .outcome-summary-cards {
     grid-column: auto;
     grid-row: auto;
   }
