@@ -1197,7 +1197,7 @@ textarea {
 
 .outcome-group-card {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(220px, 0.38fr);
   align-items: start;
   gap: 14px;
   width: 100%;
@@ -1238,12 +1238,6 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.outcome-group-copy p {
-  margin: 0;
-  color: #5b6c75;
-  line-height: 1.5;
-}
-
 .outcome-condition-list {
   grid-column: 1;
   display: flex;
@@ -1257,39 +1251,26 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.outcome-decision-grid {
+.outcome-effect-card {
   grid-row: 1 / span 2;
   grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.outcome-decision-grid div,
-.outcome-next-action {
   display: grid;
   gap: 4px;
   border: 1px solid #e0e8ec;
   border-radius: 8px;
   background: #f8fbfc;
-  padding: 10px;
+  padding: 12px;
 }
 
-.outcome-decision-grid span,
-.outcome-next-action span {
+.outcome-effect-card span {
   color: #60737c;
   font-size: 12px;
   font-weight: 650;
 }
 
-.outcome-decision-grid strong,
-.outcome-next-action strong {
+.outcome-effect-card strong {
+  font-size: 16px;
   overflow-wrap: anywhere;
-}
-
-.outcome-next-action {
-  grid-column: 1 / -1;
-  background: #eff8f4;
 }
 
 .pattern-list button {
@@ -1470,8 +1451,7 @@ textarea {
   }
 
   .outcome-condition-list,
-  .outcome-decision-grid,
-  .outcome-next-action {
+  .outcome-effect-card {
     grid-column: auto;
     grid-row: auto;
   }
@@ -1498,10 +1478,6 @@ textarea {
   .condition-row,
   .status-strip,
   .checklist-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .outcome-decision-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -52,6 +52,47 @@ type OutcomeGroup = {
   conditions: PatternCondition[];
 };
 
+const comparableValue = (value: string | number | boolean) =>
+  stripDecimalSuffixes(String(value)).trim().toLowerCase();
+
+const canonicalConditionKey = (condition: PatternCondition) => {
+  const feature = conditionFeatureLabel(condition.label);
+  const [countFeature, countValue] = feature.split(':').map((part) => part.trim());
+
+  if (
+    countValue &&
+    countFeature.endsWith('別回数') &&
+    ['gt', 'gte'].includes(condition.operator) &&
+    typeof condition.value === 'number' &&
+    condition.value >= 1
+  ) {
+    return `${countFeature.replace(/別回数$/, '')}:${comparableValue(countValue)}`;
+  }
+
+  if (condition.operator === 'eq') {
+    return `${feature}:${comparableValue(condition.value)}`;
+  }
+
+  return conditionSummary([condition]).replace(/\s+/g, '').toLowerCase();
+};
+
+const canonicalGroupKey = (conditions: PatternCondition[]) =>
+  conditions.map(canonicalConditionKey).sort().join('&&');
+
+const dedupeOutcomeGroups = (groups: OutcomeGroup[]) => {
+  const deduped = new Map<string, OutcomeGroup>();
+
+  groups.forEach((group) => {
+    const key = canonicalGroupKey(group.conditions);
+    const current = deduped.get(key);
+    if (!current || (!current.segment && group.segment)) {
+      deduped.set(key, group);
+    }
+  });
+
+  return [...deduped.values()];
+};
+
 const outcomeGroupName = (group: OutcomeGroup) =>
   stripDecimalSuffixes(group.segment?.name || group.pattern?.title || conditionSummary(group.conditions));
 
@@ -63,11 +104,6 @@ const outcomeEffectText = (pattern?: GoldenPatternResult) => {
 
   return parts.length > 0 ? parts.join(' / ') : '効果見込みを確認中';
 };
-
-const recommendedActionText = (group: OutcomeGroup) =>
-  group.pattern?.recommendedAction ||
-  group.segment?.useCase ||
-  'この条件で対象顧客を抽出し、既存施策の配信対象として確認します。';
 
 export const ResultsVisualizationScreen = ({
   analysisJobId,
@@ -122,14 +158,16 @@ export const ResultsVisualizationScreen = ({
     }));
 
     if (groups.length > 0) {
-      return groups;
+      return dedupeOutcomeGroups(groups);
     }
 
-    return result.goldenPatterns.map((pattern) => ({
-      id: pattern.id,
-      pattern,
-      conditions: pattern.conditions
-    }));
+    return dedupeOutcomeGroups(
+      result.goldenPatterns.map((pattern) => ({
+        id: pattern.id,
+        pattern,
+        conditions: pattern.conditions
+      }))
+    );
   }, [result]);
 
   const toggleSegment = (segmentId: string) => {
@@ -247,9 +285,6 @@ export const ResultsVisualizationScreen = ({
                   <div className="outcome-group-copy">
                     <span className="insight-rank">候補 {index + 1}</span>
                     <strong>{outcomeGroupName(group)}</strong>
-                    {group.segment?.description || group.pattern?.description ? (
-                      <p>{group.segment?.description || group.pattern?.description}</p>
-                    ) : null}
                   </div>
                 </div>
                 <div className="outcome-condition-list" aria-label="条件">
@@ -259,23 +294,9 @@ export const ResultsVisualizationScreen = ({
                     </span>
                   ))}
                 </div>
-                <div className="outcome-decision-grid">
-                  <div>
-                    <span>期待効果</span>
-                    <strong>{outcomeEffectText(group.pattern)}</strong>
-                  </div>
-                  <div>
-                    <span>対象規模</span>
-                    <strong>{group.segment ? `${formatNumber(group.segment.estimatedAudienceSize)} 人` : '-'}</strong>
-                  </div>
-                  <div>
-                    <span>優先度</span>
-                    <strong>{group.segment?.priorityScore ?? '-'}</strong>
-                  </div>
-                </div>
-                <div className="outcome-next-action">
-                  <span>次にやること</span>
-                  <strong>{recommendedActionText(group)}</strong>
+                <div className="outcome-effect-card">
+                  <span>期待効果</span>
+                  <strong>{outcomeEffectText(group.pattern)}</strong>
                 </div>
               </label>
             );
