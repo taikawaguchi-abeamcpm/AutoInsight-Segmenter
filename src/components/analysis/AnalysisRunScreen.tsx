@@ -7,6 +7,25 @@ import type { SemanticMappingDocument } from '../../types/mapping';
 import type { FabricDataset } from '../../types/mapping';
 import { Badge, Button, Card, Field, Metric, formatNumber, formatPercent } from '../common/ui';
 
+const resolveAnalysisRowCount = (
+  summary: AnalysisInputSummary,
+  mapping: SemanticMappingDocument,
+  dataset: FabricDataset
+) => {
+  if (typeof summary.dataQuality.eligibleRowCount === 'number' && summary.dataQuality.eligibleRowCount > 0) {
+    return summary.dataQuality.eligibleRowCount;
+  }
+
+  const customerTableId = mapping.tableMappings.find((table) => table.entityRole === 'customer_master')?.tableId;
+  const customerTableRowCount = dataset.tables.find((table) => table.id === customerTableId)?.rowCount;
+  if (typeof customerTableRowCount === 'number' && customerTableRowCount > 0) {
+    return customerTableRowCount;
+  }
+
+  const tableRowCounts = dataset.tables.map((table) => table.rowCount ?? 0);
+  return tableRowCounts.length > 0 ? Math.max(...tableRowCounts, 0) : 0;
+};
+
 const validateConfigLocally = (summary: AnalysisInputSummary, config: AnalysisRunConfig): AnalysisRunValidation => {
   const issues: AnalysisRunValidation['issues'] = [];
   const selectedFeatureCount =
@@ -73,6 +92,7 @@ export const AnalysisRunScreen = ({
   const [validation, setValidation] = useState<AnalysisRunValidation | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [analysisRowsProcessed, setAnalysisRowsProcessed] = useState(0);
+  const [startError, setStartError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
@@ -135,7 +155,7 @@ export const AnalysisRunScreen = ({
       return;
     }
 
-    const totalRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
+    const totalRows = resolveAnalysisRowCount(summary, mapping, fabricDataset);
     if (totalRows === 0) {
       setAnalysisRowsProcessed(0);
       return;
@@ -149,7 +169,7 @@ export const AnalysisRunScreen = ({
     }, 180);
 
     return () => window.clearInterval(intervalId);
-  }, [submitting, summary, validation?.estimatedDurationSeconds]);
+  }, [fabricDataset, mapping, submitting, summary, validation?.estimatedDurationSeconds]);
 
   const enabledFeatureCount = useMemo(() => {
     if (!summary || !config) {
@@ -198,6 +218,7 @@ export const AnalysisRunScreen = ({
       return;
     }
 
+    setStartError(null);
     const localResult = validateConfigLocally(summary, config);
     setValidation(localResult);
 
@@ -205,8 +226,14 @@ export const AnalysisRunScreen = ({
       return;
     }
 
-    const result = await analysisApi.validate(summary, config);
-    setValidation(result);
+    let result: AnalysisRunValidation;
+    try {
+      result = await analysisApi.validate(summary, config);
+      setValidation(result);
+    } catch (error) {
+      setStartError(isApiError(error) || error instanceof Error ? error.message : '分析条件の検証に失敗しました。');
+      return;
+    }
 
     if (!result.valid) {
       return;
@@ -215,11 +242,13 @@ export const AnalysisRunScreen = ({
     setSubmitting(true);
     setAnalysisRowsProcessed(0);
     try {
-      const totalRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
+      const totalRows = resolveAnalysisRowCount(summary, mapping, fabricDataset);
       const started = await analysisApi.start(mapping, config, {}, fabricDataset);
       setAnalysisRowsProcessed(totalRows);
       await new Promise((resolve) => window.setTimeout(resolve, 350));
       onStarted(started.analysisJobId);
+    } catch (error) {
+      setStartError(isApiError(error) || error instanceof Error ? error.message : '分析を開始できませんでした。');
     } finally {
       setSubmitting(false);
     }
@@ -249,8 +278,12 @@ export const AnalysisRunScreen = ({
   }
 
   const customConfig = config.mode === 'custom' ? config : null;
-  const totalAnalysisRows = Math.max(summary.dataQuality.eligibleRowCount ?? 0, 0);
+  const totalAnalysisRows = resolveAnalysisRowCount(summary, mapping, fabricDataset);
   const progressPercent = totalAnalysisRows > 0 ? Math.round((analysisRowsProcessed / totalAnalysisRows) * 100) : 0;
+  const progressLabel =
+    totalAnalysisRows > 0
+      ? `${formatNumber(analysisRowsProcessed)}/${formatNumber(totalAnalysisRows)}行のデータを分析しています`
+      : '行数を確認しながらデータを分析しています';
 
   if (submitting) {
     return (
@@ -266,9 +299,7 @@ export const AnalysisRunScreen = ({
           >
             <span style={{ width: `${progressPercent}%` }} />
           </div>
-          <strong>
-            {formatNumber(analysisRowsProcessed)}/{formatNumber(totalAnalysisRows)}行のデータを分析しています
-          </strong>
+          <strong>{progressLabel}</strong>
         </Card>
       </div>
     );
@@ -305,6 +336,7 @@ export const AnalysisRunScreen = ({
         ))}
       </div>
       {draftMessage ? <p className="notice success">{draftMessage}</p> : null}
+      {startError ? <p className="notice error">{startError}</p> : null}
 
       <div className="two-column">
         <Card>
