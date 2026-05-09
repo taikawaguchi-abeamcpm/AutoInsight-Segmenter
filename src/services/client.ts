@@ -71,8 +71,54 @@ const readPayload = async (response: Response): Promise<unknown> => {
   try {
     return JSON.parse(text);
   } catch {
+    return text;
+  }
+};
+
+const getPayloadValue = (payload: unknown, key: string): unknown =>
+  typeof payload === 'object' && payload !== null && key in payload
+    ? (payload as Record<string, unknown>)[key]
+    : undefined;
+
+const normalizeApiErrorPayload = (payload: unknown, fallbackStatus: number, fallbackMessage: string): ApiError | null => {
+  if (!payload) {
     return null;
   }
+
+  if (isApiError(payload)) {
+    return payload;
+  }
+
+  const nestedError = getPayloadValue(payload, 'error');
+  if (isApiError(nestedError)) {
+    return nestedError;
+  }
+
+  const source = typeof nestedError === 'object' && nestedError !== null ? nestedError : payload;
+  const code = getPayloadValue(source, 'code');
+  const message = getPayloadValue(source, 'message') ?? getPayloadValue(source, 'error') ?? getPayloadValue(source, 'title');
+
+  if (typeof message === 'string' && message.trim()) {
+    return createApiError({
+      code: typeof code === 'string' && code.trim() ? code : `HTTP.${fallbackStatus}`,
+      message: message.trim(),
+      retryable: fallbackStatus >= 500
+    });
+  }
+
+  if (typeof payload === 'string' && payload.trim()) {
+    return createApiError({
+      code: `HTTP.${fallbackStatus}`,
+      message: payload.trim(),
+      retryable: fallbackStatus >= 500
+    });
+  }
+
+  return createApiError({
+    code: `HTTP.${fallbackStatus}`,
+    message: fallbackMessage,
+    retryable: fallbackStatus >= 500
+  });
 };
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T | null> => {
@@ -102,8 +148,13 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   const payload = await readPayload(response);
 
   if (!response.ok) {
-    if (payload && isApiError(payload)) {
-      throw payload;
+    const normalizedError = normalizeApiErrorPayload(
+      payload,
+      response.status,
+      response.statusText || 'API request failed.'
+    );
+    if (normalizedError) {
+      throw normalizedError;
     }
 
     throw createApiError({

@@ -1,5 +1,5 @@
 import { AlertTriangle, Play, Save } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isAbortError, isApiError, makeHash } from '../../services/client';
 import { analysisApi, createDefaultConfig } from '../../services/analysis/analysisApi';
 import type { AnalysisInputSummary, AnalysisMode, AnalysisRunConfig, AnalysisRunValidation, CustomAnalysisConfig } from '../../types/analysis';
@@ -95,6 +95,7 @@ export const AnalysisRunScreen = ({
   const [startError, setStartError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const startingRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -214,43 +215,48 @@ export const AnalysisRunScreen = ({
   };
 
   const start = async () => {
-    if (!summary || !config) {
+    if (!summary || !config || startingRef.current) {
       return;
     }
 
+    startingRef.current = true;
     setStartError(null);
-    const localResult = validateConfigLocally(summary, config);
-    setValidation(localResult);
-
-    if (!localResult.valid) {
-      return;
-    }
-
-    let result: AnalysisRunValidation;
     try {
-      result = await analysisApi.validate(summary, config);
-      setValidation(result);
-    } catch (error) {
-      setStartError(isApiError(error) || error instanceof Error ? error.message : '分析条件の検証に失敗しました。');
-      return;
-    }
+      const localResult = validateConfigLocally(summary, config);
+      setValidation(localResult);
 
-    if (!result.valid) {
-      return;
-    }
+      if (!localResult.valid) {
+        return;
+      }
 
-    setSubmitting(true);
-    setAnalysisRowsProcessed(0);
-    try {
-      const totalRows = resolveAnalysisRowCount(summary, mapping, fabricDataset);
-      const started = await analysisApi.start(mapping, config, {}, fabricDataset);
-      setAnalysisRowsProcessed(totalRows);
-      await new Promise((resolve) => window.setTimeout(resolve, 350));
-      onStarted(started.analysisJobId);
-    } catch (error) {
-      setStartError(isApiError(error) || error instanceof Error ? error.message : '分析を開始できませんでした。');
+      let result: AnalysisRunValidation;
+      try {
+        result = await analysisApi.validate(summary, config);
+        setValidation(result);
+      } catch (error) {
+        setStartError(isApiError(error) || error instanceof Error ? error.message : '分析条件の検証に失敗しました。');
+        return;
+      }
+
+      if (!result.valid) {
+        return;
+      }
+
+      setSubmitting(true);
+      setAnalysisRowsProcessed(0);
+      try {
+        const totalRows = resolveAnalysisRowCount(summary, mapping, fabricDataset);
+        const started = await analysisApi.start(mapping, config, {}, fabricDataset);
+        setAnalysisRowsProcessed(totalRows);
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        onStarted(started.analysisJobId);
+      } catch (error) {
+        setStartError(isApiError(error) || error instanceof Error ? error.message : '分析を開始できませんでした。');
+      } finally {
+        setSubmitting(false);
+      }
     } finally {
-      setSubmitting(false);
+      startingRef.current = false;
     }
   };
 
