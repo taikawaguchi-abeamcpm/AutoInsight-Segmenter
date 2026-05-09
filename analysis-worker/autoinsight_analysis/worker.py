@@ -780,6 +780,8 @@ def numeric_condition_label(feature: dict[str, Any], operator: str, value: float
         if operator == "gte":
             return f"{label} が {count} 回以上"
         if operator == "lte":
+            if count <= 0:
+                return f"{label} なし"
             return f"{label} が {count} 回以下"
     suffix = "以下" if operator == "lte" else "以上"
     return f"{label} が {display_number(value)} {suffix}"
@@ -1746,6 +1748,87 @@ def matches_condition(row: dict[str, Any], condition: dict[str, Any]) -> bool:
     return False
 
 
+def comparable_condition_value(value: Any) -> str:
+    text = str(value).strip().lower()
+    return text[:-2] if text.endswith(".0") else text
+
+
+def condition_feature_label(condition: dict[str, Any]) -> str:
+    label = str(condition.get("label") or condition.get("featureKey") or "")
+    return label.split(" が ", 1)[0].strip()
+
+
+def semantic_condition_key(condition: dict[str, Any]) -> tuple[Any, ...]:
+    feature = condition_feature_label(condition)
+    count_feature, separator, count_value = feature.partition(":")
+    numeric_value = to_number(condition.get("value"))
+
+    if (
+        separator
+        and count_feature.strip().endswith("別回数")
+        and condition.get("operator") in {"gt", "gte"}
+        and numeric_value is not None
+        and numeric_value >= 1
+    ):
+        base_feature = count_feature.strip()[:-len("別回数")].strip()
+        return ("category_presence", base_feature, comparable_condition_value(count_value))
+
+    if condition.get("operator") == "eq":
+        return ("category_presence", feature, comparable_condition_value(condition.get("value")))
+
+    return (
+        "raw",
+        str(condition.get("featureKey") or ""),
+        str(condition.get("operator") or ""),
+        comparable_condition_value(condition.get("value")),
+        comparable_condition_value(condition.get("valueTo")),
+    )
+
+
+def row_signature_for_conditions(rows: list[dict[str, Any]], conditions: list[dict[str, Any]]) -> tuple[Any, ...]:
+    return tuple(
+        row.get("__rowId")
+        for row in rows
+        if all(matches_condition(row, condition) for condition in conditions)
+    )
+
+
+def condition_signature(rows: list[dict[str, Any]], condition: dict[str, Any]) -> tuple[Any, ...]:
+    return row_signature_for_conditions(rows, [condition])
+
+
+def compact_equivalent_conditions(rows: list[dict[str, Any]], conditions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compacted = []
+    seen: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+    for condition in conditions:
+        semantic_key = semantic_condition_key(condition)
+        matched_rows = condition_signature(rows, condition)
+        if seen.get(semantic_key) == matched_rows:
+            continue
+        seen[semantic_key] = matched_rows
+        compacted.append(condition)
+
+    changed = True
+    while changed and len(compacted) > 1:
+        changed = False
+        current_signature = row_signature_for_conditions(rows, compacted)
+        for index in range(len(compacted)):
+            reduced = compacted[:index] + compacted[index + 1:]
+            if reduced and row_signature_for_conditions(rows, reduced) == current_signature:
+                compacted = reduced
+                changed = True
+                break
+
+    return compacted
+
+
+def pattern_signature(rows: list[dict[str, Any]], conditions: list[dict[str, Any]]) -> tuple[Any, ...]:
+    return (
+        tuple(sorted(semantic_condition_key(condition) for condition in conditions)),
+        row_signature_for_conditions(rows, conditions),
+    )
+
+
 def mine_sequential_route_features(
     rows: list[dict[str, Any]],
     features: list[dict[str, Any]],
@@ -1892,7 +1975,9 @@ def build_golden_patterns(
             feature_keys = [entry["featureKey"] for entry in entries]
             if len(set(feature_keys)) != len(feature_keys):
                 continue
-            conditions = [entry["condition"] for entry in entries]
+            conditions = compact_equivalent_conditions(rows, [entry["condition"] for entry in entries])
+            if len(conditions) < 2:
+                continue
             matched = [row for row in rows if all(matches_condition(row, condition) for condition in conditions)]
             if len(matched) < min_group_count:
                 continue
@@ -1908,7 +1993,7 @@ def build_golden_patterns(
                 "supportRate": support_rate,
                 "conversionDelta": delta,
                 "lift": conversion_rate / baseline_rate if baseline_rate > 0 else None,
-                "score": clamp_score(delta * 130 * math.sqrt(support_rate) + size * 8),
+                "score": clamp_score(delta * 130 * math.sqrt(support_rate) + len(conditions) * 8),
             })
 
     candidates.sort(
@@ -1924,10 +2009,7 @@ def build_golden_patterns(
     patterns = []
     seen = set()
     for candidate in candidates:
-        signature = tuple(
-            (condition["featureKey"], condition.get("operator"), str(condition.get("value")), str(condition.get("valueTo")))
-            for condition in candidate["conditions"]
-        )
+        signature = pattern_signature(rows, candidate["conditions"])
         if signature in seen:
             continue
         seen.add(signature)

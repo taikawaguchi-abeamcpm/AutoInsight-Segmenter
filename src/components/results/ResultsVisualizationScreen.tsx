@@ -37,12 +37,54 @@ const formatDisplayValue = (value: string | number | boolean) => {
 
 const conditionFeatureLabel = (label: string) => {
   const [feature] = label.split(' が ');
-  return stripDecimalSuffixes(feature || label);
+  return stripDecimalSuffixes((feature || label).replace(/\sなし$/, ''));
 };
+
+const countConditionSummary = (condition: { label: string; operator: string; value: string | number | boolean }) => {
+  const feature = conditionFeatureLabel(condition.label);
+  const [countFeature, countValue] = feature.split(':').map((part) => part.trim());
+  const value = typeof condition.value === 'number' ? Math.max(0, Math.round(condition.value)) : condition.value;
+  if (!countValue || !countFeature.endsWith('別回数') || typeof value !== 'number') {
+    return null;
+  }
+
+  if (condition.operator === 'gte') {
+    return `${feature} が ${formatDisplayValue(value)} 回以上`;
+  }
+  if (condition.operator === 'lte') {
+    return value <= 0 ? `${feature} なし` : `${feature} が ${formatDisplayValue(value)} 回以下`;
+  }
+
+  return null;
+};
+
+const numericConditionSummary = (condition: { label: string; operator: string; value: string | number | boolean; valueTo?: string | number }) => {
+  if (typeof condition.value !== 'number') {
+    return null;
+  }
+
+  const suffixByOperator: Record<string, string> = {
+    gt: 'より大きい',
+    gte: '以上',
+    lt: '未満',
+    lte: '以下'
+  };
+  const suffix = suffixByOperator[condition.operator];
+  if (!suffix) {
+    return null;
+  }
+
+  return `${conditionFeatureLabel(condition.label)} が ${conditionValueLabel(condition)} ${suffix}`;
+};
+
+const singleConditionSummary = (condition: { label: string; operator: string; value: string | number | boolean; valueTo?: string | number }) =>
+  countConditionSummary(condition) ??
+  numericConditionSummary(condition) ??
+  `${conditionFeatureLabel(condition.label)} ${operatorLabel[condition.operator] ?? condition.operator} ${conditionValueLabel(condition)}`;
 
 const conditionSummary = (conditions: { label: string; operator: string; value: string | number | boolean; valueTo?: string | number }[]) =>
   conditions
-    .map((condition) => `${conditionFeatureLabel(condition.label)} ${operatorLabel[condition.operator] ?? condition.operator} ${conditionValueLabel(condition)}`)
+    .map(singleConditionSummary)
     .join(' かつ ');
 
 type OutcomeGroup = {
@@ -120,7 +162,7 @@ const dedupeOutcomeGroups = (groups: OutcomeGroup[]) => {
 };
 
 const outcomeGroupName = (group: OutcomeGroup) =>
-  stripDecimalSuffixes(group.segment?.name || group.pattern?.title || conditionSummary(group.conditions));
+  stripDecimalSuffixes(conditionSummary(group.conditions) || group.segment?.name || group.pattern?.title || '');
 
 const formatEffectDelta = (value?: number) =>
   typeof value === 'number' ? `${value >= 0 ? '+' : ''}${formatPercent(value)}` : '-';
@@ -138,14 +180,20 @@ const outcomeAudienceSize = (group: OutcomeGroup, result: AnalysisResultDocument
 };
 
 const toSegmentRecommendation = (group: OutcomeGroup, result: AnalysisResultDocument): SegmentRecommendation =>
-  group.segment ?? {
-    id: `seg-${group.id}`,
-    name: outcomeGroupName(group),
-    sourcePatternId: group.pattern?.id,
-    estimatedAudienceSize: outcomeAudienceSize(group, result),
-    conditions: group.conditions,
-    priorityScore: Math.round(((group.pattern?.lift ?? 1) * 100) + ((group.pattern?.conversionDelta ?? 0) * 100))
-  };
+  group.segment
+    ? {
+        ...group.segment,
+        name: outcomeGroupName(group),
+        conditions: group.conditions
+      }
+    : {
+        id: `seg-${group.id}`,
+        name: outcomeGroupName(group),
+        sourcePatternId: group.pattern?.id,
+        estimatedAudienceSize: outcomeAudienceSize(group, result),
+        conditions: group.conditions,
+        priorityScore: Math.round(((group.pattern?.lift ?? 1) * 100) + ((group.pattern?.conversionDelta ?? 0) * 100))
+      };
 
 const rowsFromSegments = (segments: SegmentRecommendation[]) =>
   segments.flatMap((segment) =>
